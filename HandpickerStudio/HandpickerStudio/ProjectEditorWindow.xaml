@@ -1,0 +1,58 @@
+<Window x:Class="HandpickerStudio.ProjectEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="プロジェクト設定" Width="840" Height="490" MinWidth="650" MinHeight="365"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <DockPanel Margin="16">
+        <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+            <TextBlock x:Name="ErrorText" Foreground="#9D2E19" TextWrapping="Wrap" Margin="0,0,0,5" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="キャンセル" IsCancel="True" Margin="0,0,8,0" />
+                <Button Content="保存" IsDefault="True" Click="Save" MinWidth="74" />
+            </StackPanel>
+        </StackPanel>
+
+        <TabControl x:Name="EditorTabs" Background="{StaticResource PanelBrush}">
+            <TabItem Header="基本設定">
+                <StackPanel Margin="14">
+                    <Label Content="プロジェクト名" Target="{Binding ElementName=NameInput}" />
+                    <TextBox x:Name="NameInput" Margin="0,0,0,8" />
+                    <Label Content="Checkpointフォルダー" Target="{Binding ElementName=CheckpointInput}" />
+                    <DockPanel Margin="0,0,0,8">
+                        <Button DockPanel.Dock="Right" Content="選択…" Tag="{Binding ElementName=CheckpointInput}" Click="BrowseFolder" Margin="8,0,0,0" />
+                        <TextBox x:Name="CheckpointInput" />
+                    </DockPanel>
+                    <Label Content="HandpickerSuiteの評価JSON（任意）" Target="{Binding ElementName=EvaluationInput}" />
+                    <DockPanel Margin="0,0,0,8">
+                        <Button DockPanel.Dock="Right" Content="選択…" Click="BrowseEvaluation" Margin="8,0,0,0" />
+                        <TextBox x:Name="EvaluationInput" />
+                    </DockPanel>
+                    <Label Content="Cacheフォルダー（空欄でアプリ配下のcache）" Target="{Binding ElementName=CacheInput}" />
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="選択…" Tag="{Binding ElementName=CacheInput}" Click="BrowseFolder" Margin="8,0,0,0" />
+                        <TextBox x:Name="CacheInput" />
+                    </DockPanel>
+                </StackPanel>
+            </TabItem>
+            <TabItem x:Name="RootsTab" Header="参照ルート">
+                <DockPanel Margin="12">
+                    <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                        <Button Content="ルートを追加" Click="AddRoot" Margin="0,0,6,0" />
+                        <Button Content="Outputを選択…" Click="BrowseOutput" Margin="0,0,6,0" />
+                        <Button Content="Archiveを選択…" Click="BrowseArchive" Margin="0,0,6,0" />
+                        <Button Content="ルートを外す" Click="RemoveRoot" />
+                    </WrapPanel>
+                    <DataGrid x:Name="RootsGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                              SelectionMode="Single" SelectionUnit="FullRow" HeadersVisibility="Column" GridLinesVisibility="Horizontal">
+                        <DataGrid.Columns>
+                            <DataGridCheckBoxColumn Header="有効" Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Width="55" />
+                            <DataGridTextColumn Header="名前" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="110" />
+                            <DataGridTextColumn Header="Output" Binding="{Binding OutputPath, UpdateSourceTrigger=PropertyChanged}" Width="*" />
+                            <DataGridTextColumn Header="Archive" Binding="{Binding ArchivePath, UpdateSourceTrigger=PropertyChanged}" Width="*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

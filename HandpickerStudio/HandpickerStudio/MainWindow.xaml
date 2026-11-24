@@ -1,12 +1,158 @@
 ﻿<Window x:Class="HandpickerStudio.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:HandpickerStudio"
-        mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
-    <Grid>
+        Title="HandpickerStudio" Width="1130" Height="760" MinWidth="790" MinHeight="510"
+        Loaded="OnLoaded" Closed="OnClosed">
+    <Window.Resources>
+        <HierarchicalDataTemplate DataType="{x:Type local:CheckpointGroup}" ItemsSource="{Binding Items}">
+            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="0,4" />
+        </HierarchicalDataTemplate>
+        <DataTemplate DataType="{x:Type local:Checkpoint}">
+            <TextBlock Text="{Binding RelativePath}" ToolTip="{Binding FullPath}" Margin="0,3" TextTrimming="CharacterEllipsis" />
+        </DataTemplate>
+    </Window.Resources>
 
-    </Grid>
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,0,0,1" Padding="18,14">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Left" Text="HandpickerStudio" FontSize="19" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Content="登録" Click="AddProject" IsEnabled="{Binding CanSave}" Margin="0,0,6,0" />
+                    <Button Content="設定" Click="EditProject" IsEnabled="{Binding CanEditProject}" Margin="0,0,6,0" />
+                    <Button Content="登録解除" Click="RemoveProject" IsEnabled="{Binding CanEditProject}" Margin="0,0,6,0" />
+                    <Button Content="更新" Click="Reload" />
+                </StackPanel>
+                <ComboBox x:Name="ProjectPicker" ItemsSource="{Binding Projects}" DisplayMemberPath="Name"
+                          SelectedItem="{Binding SelectedProject, Mode=TwoWay}" AutomationProperties.Name="プロジェクト"
+                          Margin="22,0,14,0" MinWidth="115" Padding="7,4" VerticalContentAlignment="Center" />
+            </DockPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Bottom" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,1,0,0" Padding="18,7">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding StatusText}" Foreground="{StaticResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                <Button DockPanel.Dock="Left" Content="確認事項" Click="ShowWarnings" Margin="0,0,8,0"
+                        Visibility="{Binding HasWarnings, Converter={StaticResource BooleanVisibility}}" />
+                <Button DockPanel.Dock="Left" Content="名前の重複" Click="ShowCollisions" Foreground="#864900"
+                        Visibility="{Binding HasCollisions, Converter={StaticResource BooleanVisibility}}" />
+                <TextBlock />
+            </DockPanel>
+        </Border>
+
+        <Grid Margin="14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300" MinWidth="212" />
+                <ColumnDefinition Width="9" />
+                <ColumnDefinition Width="*" MinWidth="330" />
+            </Grid.ColumnDefinitions>
+
+            <TabControl BorderBrush="{StaticResource BorderBrush}" Background="{StaticResource PanelBrush}">
+                <TabItem Header="Checkpoint">
+                    <DockPanel Margin="8">
+                        <Button DockPanel.Dock="Bottom" Content="{Binding UnresolvedLabel}" Click="ShowUnresolved"
+                                HorizontalContentAlignment="Left" Margin="0,8,0,0" />
+                        <TreeView x:Name="CheckpointTree" ItemsSource="{Binding Groups}" SelectedItemChanged="SelectCheckpoint"
+                                  BorderThickness="0" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling">
+                            <TreeView.ItemContainerStyle>
+                                <Style TargetType="TreeViewItem">
+                                    <Setter Property="IsExpanded" Value="True" />
+                                </Style>
+                            </TreeView.ItemContainerStyle>
+                        </TreeView>
+                    </DockPanel>
+                </TabItem>
+                <TabItem Header="参照ルート">
+                    <DockPanel Margin="8">
+                        <Button DockPanel.Dock="Bottom" Content="参照ルートを編集" Click="EditRoots"
+                                IsEnabled="{Binding CanEditProject}" Margin="0,8,0,0" />
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl ItemsSource="{Binding Roots}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="9" Margin="0,0,2,8">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Root.Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding Status}" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,2,0,6" />
+                                                <TextBlock Text="Output" FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding Root.OutputPath}" TextWrapping="Wrap" Margin="0,0,0,5" />
+                                                <TextBlock Text="Archive" FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding Root.ArchivePath}" TextWrapping="Wrap" />
+                                                <Button Content="{Binding Action}" Click="ToggleRoot" Tag="{Binding Root}" Margin="0,8,0,0"
+                                                        IsEnabled="{Binding DataContext.CanSave, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        HorizontalAlignment="Left" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </DockPanel>
+                </TabItem>
+            </TabControl>
+
+            <GridSplitter Grid.Column="1" Width="7" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="Transparent" />
+            <Border Grid.Column="2" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="6" Padding="14">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+                        <Button DockPanel.Dock="Right" Content="開く" Click="OpenSelectedImage" Margin="10,0,0,0"
+                                VerticalAlignment="Center">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedItem, ElementName=Gallery}" Value="{x:Null}">
+                                            <Setter Property="IsEnabled" Value="False" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <StackPanel>
+                            <TextBlock Text="{Binding GalleryTitle}" FontSize="22" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding GalleryContext}" Foreground="{StaticResource SecondaryTextBrush}" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </DockPanel>
+                    <Grid>
+                        <ListBox x:Name="Gallery" ItemsSource="{Binding Images}" BorderThickness="0" SelectionMode="Extended"
+                                 PreviewMouseLeftButtonUp="OpenImage" KeyDown="OpenImageWithKey" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Padding" Value="3" />
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="2,4,2,7">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="140" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border Background="{StaticResource CanvasBrush}" CornerRadius="4" Height="94">
+                                                <local:ImagePreview FilePath="{Binding FullPath}" DecodeLimit="280" Stretch="Uniform" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding Location}" Foreground="{StaticResource SecondaryTextBrush}" />
+                                                <TextBlock Text="{Binding FullPath}" ToolTip="{Binding FullPath}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding Problem}" ToolTip="{Binding Problem}" Foreground="#864900" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <TextBlock Text="{Binding EmptyGalleryMessage}" Foreground="{StaticResource SecondaryTextBrush}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" IsHitTestVisible="False"
+                                   Visibility="{Binding IsGalleryEmpty, Converter={StaticResource BooleanVisibility}}" />
+                    </Grid>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
 </Window>
