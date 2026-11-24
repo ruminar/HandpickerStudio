@@ -11,6 +11,53 @@
         <DataTemplate DataType="{x:Type local:Checkpoint}">
             <TextBlock Text="{Binding RelativePath}" ToolTip="{Binding FullPath}" Margin="0,3" TextTrimming="CharacterEllipsis" />
         </DataTemplate>
+        <DataTemplate x:Key="ImageListTemplate">
+            <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="2,4,2,7">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="140" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Background="{StaticResource CanvasBrush}" CornerRadius="4" Height="94">
+                        <local:ImagePreview FilePath="{Binding FullPath}" DecodeLimit="280" Stretch="Uniform" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Location}" Foreground="{StaticResource SecondaryTextBrush}" />
+                        <TextBlock Text="{Binding FullPath}" ToolTip="{Binding FullPath}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Problem}" ToolTip="{Binding Problem}" Foreground="#864900" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+        <DataTemplate x:Key="ImageTileTemplate">
+            <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="5" Padding="5" Margin="2">
+                <Border.ToolTip>
+                    <ToolTip>
+                        <StackPanel>
+                            <TextBlock Text="{Binding FullPath}" />
+                            <TextBlock Text="{Binding Problem}" Foreground="#864900" />
+                        </StackPanel>
+                    </ToolTip>
+                </Border.ToolTip>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Border Background="{StaticResource CanvasBrush}" CornerRadius="3">
+                        <local:ImagePreview FilePath="{Binding FullPath}" DecodeLimit="280" Stretch="Uniform" />
+                    </Border>
+                    <StackPanel Grid.Row="1" Margin="2,4,2,0">
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Location}" Foreground="{StaticResource SecondaryTextBrush}" TextTrimming="CharacterEllipsis" FontSize="12" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+        <ItemsPanelTemplate x:Key="ImageTilePanel">
+            <local:VirtualizingTilePanel ClipToBounds="True" />
+        </ItemsPanelTemplate>
     </Window.Resources>
 
     <DockPanel>
@@ -110,6 +157,22 @@
                                 </Style>
                             </Button.Style>
                         </Button>
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                            <RadioButton GroupName="GalleryView" Content="一覧" Checked="ChangeGalleryView" Margin="0,0,10,0">
+                                <RadioButton.Style>
+                                    <Style TargetType="RadioButton">
+                                        <Setter Property="IsChecked" Value="True" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding UseTileView}" Value="True">
+                                                <Setter Property="IsChecked" Value="False" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </RadioButton.Style>
+                            </RadioButton>
+                            <RadioButton x:Name="TileViewOption" GroupName="GalleryView" Content="タイル" Checked="ChangeGalleryView"
+                                         IsChecked="{Binding UseTileView, Mode=OneWay}" />
+                        </StackPanel>
                         <StackPanel>
                             <TextBlock Text="{Binding GalleryTitle}" FontSize="22" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                             <TextBlock Text="{Binding GalleryContext}" Foreground="{StaticResource SecondaryTextBrush}" TextTrimming="CharacterEllipsis" />
@@ -118,34 +181,25 @@
                     <Grid>
                         <ListBox x:Name="Gallery" ItemsSource="{Binding Images}" BorderThickness="0" SelectionMode="Extended"
                                  PreviewMouseLeftButtonUp="OpenImage" KeyDown="OpenImageWithKey" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.CanContentScroll="True"
                                  VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling">
+                            <ListBox.Style>
+                                <Style TargetType="ListBox">
+                                    <Setter Property="ItemTemplate" Value="{StaticResource ImageListTemplate}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding UseTileView}" Value="True">
+                                            <Setter Property="ItemTemplate" Value="{StaticResource ImageTileTemplate}" />
+                                            <Setter Property="ItemsPanel" Value="{StaticResource ImageTilePanel}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ListBox.Style>
                             <ListBox.ItemContainerStyle>
                                 <Style TargetType="ListBoxItem">
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                     <Setter Property="Padding" Value="3" />
                                 </Style>
                             </ListBox.ItemContainerStyle>
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="2,4,2,7">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="140" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <Border Background="{StaticResource CanvasBrush}" CornerRadius="4" Height="94">
-                                                <local:ImagePreview FilePath="{Binding FullPath}" DecodeLimit="280" Stretch="Uniform" />
-                                            </Border>
-                                            <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Text="{Binding Location}" Foreground="{StaticResource SecondaryTextBrush}" />
-                                                <TextBlock Text="{Binding FullPath}" ToolTip="{Binding FullPath}" TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Text="{Binding Problem}" ToolTip="{Binding Problem}" Foreground="#864900" TextTrimming="CharacterEllipsis" />
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
                         </ListBox>
                         <TextBlock Text="{Binding EmptyGalleryMessage}" Foreground="{StaticResource SecondaryTextBrush}"
                                    HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" IsHitTestVisible="False"

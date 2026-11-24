@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:HandpickerStudio"
         Width="960" Height="690" MinWidth="380" MinHeight="260" WindowStartupLocation="CenterOwner"
-        ShowInTaskbar="False" PreviewKeyDown="NavigateWithKey">
+        ShowInTaskbar="False" PreviewKeyDown="NavigateWithKey" PreviewMouseWheel="NavigateWithWheel">
     <DockPanel Margin="12">
         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">

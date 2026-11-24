@@ -9,7 +9,8 @@ internal sealed record Project(Guid Id, string Name, string CheckpointPath, stri
 
 internal sealed record HeldLabel(string OutputPath, string Label);
 
-internal sealed record WorkspaceSettings(int Version, Project[] Projects, Guid? SelectedProjectId, HeldLabel[] HeldLabels)
+internal sealed record WorkspaceSettings(int Version, Project[] Projects, Guid? SelectedProjectId, HeldLabel[] HeldLabels,
+    bool UseTileView = false)
 {
     public static WorkspaceSettings Empty { get; } = new(1, [], null, []);
 }

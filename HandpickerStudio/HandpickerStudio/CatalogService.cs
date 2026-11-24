@@ -152,7 +152,9 @@ internal static partial class CatalogService
             var held = holds.Where(item => WorkspacePaths.Overlap(item.OutputPath, root.OutputPath))
                 .Select(item => item.Label).ToHashSet(StringComparer.OrdinalIgnoreCase);
             int previousWarnings = warnings.Count;
-            if (DirectoryAvailable(root.OutputPath, error => warnings.Add($"{root.Name}のOutput: {error}")))
+            bool outputAvailable = DirectoryAvailable(root.OutputPath, error => warnings.Add($"{root.Name}のOutput: {error}"));
+            ReadArchive(active.Id, root, catalog.Checkpoints, images, warnings, outputAvailable, token);
+            if (outputAvailable)
             {
                 foreach (string path in EnumerateFiles(root.OutputPath, error => warnings.Add($"{root.Name}のOutput: {error}"), token))
                 {
@@ -174,15 +176,9 @@ internal static partial class CatalogService
                         reason += " · " + string.Join("、", matches.Select(item => $"{item.Project.Name}/{item.RelativePath}"));
                     images.Add(new(path, relativePath, $"{root.Name} / Output", owner, reason));
                 }
-
-                ReadArchive(active.Id, root, catalog.Checkpoints, images, warnings, token);
-                roots.Add(new(root, previousWarnings == warnings.Count ? "接続中" : "一部取得できません"));
             }
-            else
-            {
-                ReadArchive(active.Id, root, catalog.Checkpoints, images, warnings, token);
-                roots.Add(new(root, "Outputに接続できません"));
-            }
+            roots.Add(new(root, !outputAvailable ? "Outputに接続できません" :
+                previousWarnings == warnings.Count ? "接続中" : "一部取得できません"));
         }
 
         return new(images.OrderBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase)
@@ -190,9 +186,22 @@ internal static partial class CatalogService
     }
 
     private static void ReadArchive(Guid projectId, ImageRoot root, Checkpoint[] checkpoints,
-        List<ImageEntry> images, List<string> warnings, CancellationToken token)
+        List<ImageEntry> images, List<string> warnings, bool prepare, CancellationToken token)
     {
-        string archive = Path.Combine(root.ArchivePath, projectId.ToString("N"), root.Id.ToString("N"));
+        string archive = ArchiveDirectory.GetPath(projectId, root);
+        try
+        {
+            if (prepare && !Directory.Exists(archive))
+                ArchiveDirectory.EnsureExists(root, archive, token);
+            else
+                ArchiveDirectory.RequireManagedDirectory(Path.GetDirectoryName(archive)!);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            warnings.Add($"{root.Name}のarchive: {exception.Message}");
+            return;
+        }
+
         string? ReadOwner(string directory)
         {
             try
@@ -210,7 +219,7 @@ internal static partial class CatalogService
             }
         }
 
-        if (!DirectoryAvailable(root.ArchivePath, error => warnings.Add($"{root.Name}のarchive: {error}")) ||
+        if (!DirectoryAvailable(root.ArchivePath, error => warnings.Add($"{root.Name}のarchive: {error}"), allowMissing: !prepare) ||
             !DirectoryAvailable(archive, error => warnings.Add($"{root.Name}のarchive: {error}"), allowMissing: true, rejectLink: true))
             return;
 

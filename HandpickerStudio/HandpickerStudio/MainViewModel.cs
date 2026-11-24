@@ -26,6 +26,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
     public Project[] Projects => settings.Projects;
     public bool CanSave { get; private set; } = true;
     public bool CanEditProject => CanSave && SelectedProject is not null;
+    public bool UseTileView { get; private set; }
     public bool IsLoading { get; private set; }
     public CheckpointGroup[] Groups { get; private set; } = [];
     public RootStatus[] Roots { get; private set; } = [];
@@ -77,6 +78,8 @@ internal sealed class MainViewModel : INotifyPropertyChanged
             Changed(nameof(CanSave));
         }
 
+        UseTileView = settings.UseTileView;
+        Changed(nameof(UseTileView));
         UpdateProjects(settings.Projects.FirstOrDefault(project => project.Id == settings.SelectedProjectId) ??
             settings.Projects.FirstOrDefault());
         await ReloadAsync();
@@ -140,6 +143,17 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         selectedCheckpoint = null;
         showingUnresolved = true;
         UpdateGallery();
+    }
+
+    public void ChangeGalleryView(bool useTiles)
+    {
+        if (UseTileView == useTiles)
+            return;
+
+        UseTileView = useTiles;
+        Changed(nameof(UseTileView));
+        if (CanSave)
+            TrySave(settings with { UseTileView = useTiles });
     }
 
     public async Task ReloadAsync()

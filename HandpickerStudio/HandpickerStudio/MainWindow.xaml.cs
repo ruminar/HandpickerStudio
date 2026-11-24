@@ -53,6 +53,13 @@ public partial class MainWindow : Window
 
     private async void Reload(object sender, RoutedEventArgs e) => await viewModel.ReloadAsync();
 
+    private void ChangeGalleryView(object sender, RoutedEventArgs e)
+    {
+        viewModel.ChangeGalleryView(ReferenceEquals(sender, TileViewOption));
+        if (Gallery?.SelectedItem is ImageEntry selected)
+            Gallery.ScrollIntoView(selected);
+    }
+
     private void SelectCheckpoint(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
         if (e.NewValue is Checkpoint checkpoint)

@@ -7,6 +7,7 @@ public partial class ImageViewerWindow : Window
 {
     private readonly ImageEntry[] images;
     private int currentIndex;
+    private int wheelRemainder;
 
     internal ImageViewerWindow(ImageEntry[] images, int startIndex)
     {
@@ -41,5 +42,17 @@ public partial class ImageViewerWindow : Window
             return;
         e.Handled = true;
         ShowAt(currentIndex + (e.Key == Key.Left ? -1 : 1));
+    }
+
+    private void NavigateWithWheel(object sender, MouseWheelEventArgs e)
+    {
+        const int WheelDelta = 120;
+        wheelRemainder += e.Delta;
+        int steps = wheelRemainder / WheelDelta;
+        wheelRemainder %= WheelDelta;
+        int index = Math.Clamp(currentIndex - steps, 0, images.Length - 1);
+        if (index != currentIndex)
+            ShowAt(index);
+        e.Handled = true;
     }
 }
