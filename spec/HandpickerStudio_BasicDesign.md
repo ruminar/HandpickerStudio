@@ -1,6 +1,6 @@
 # HandpickerStudio 基本設計書
 
-- 文書改訂番号：Rev. 2（レビュー反映版）
+- 文書改訂番号：Rev. 3（実装・ビルド・配布方針を追記）
 - 対象アプリケーションバージョン：HandpickerStudio v0.1.0
 - 作成日：2026-11-24
 - 対象：Windowsデスクトップアプリ HandpickerStudio および ComfyUI-CheckpointHandpickerSuite 連携改修
@@ -43,7 +43,16 @@ Studioの実行ファイル名は `HandpickerStudio.exe`、リポジトリ名は
 | 設定・管理情報 | JSONおよびファイルシステム |
 | ライセンス | GPL-3.0 |
 
-MVVM・画像処理のライブラリ、非同期処理方式、配布方式は詳細設計で決める。依存ライブラリの選定時はライセンスと配布条件のGPL-3.0互換性を確認する。
+MVVM・画像処理のライブラリと非同期処理方式は詳細設計で決める。依存ライブラリの選定時はライセンスと配布条件のGPL-3.0互換性を確認する。
+
+### 2.1 実装・ビルド・配布
+
+- 初期リリースの配布形式はWindows x64向けのポータブルZIPとし、ランタイムの配布方式はFramework-dependentとする。.NET 10 Windows Desktop Runtime（x64）の事前インストールを利用条件とし、.NETランタイムはZIPに含めない。HandpickerStudio自体のインストーラーは作成しない。ユーザーが書き込めるフォルダに展開し、標準ユーザー権限で `HandpickerStudio.exe` を起動できるようにする。
+- 設定・プロジェクト登録・重複保留などのStudio管理情報は、原則として `AppContext.BaseDirectory` を基準にアプリケーション配下へ保存する。書き込めない場合は保存先を知らせ、書き込み可能な場所への展開を案内する。archive・cacheの保存先は第3・4・6章のルールを適用する。共有評価DBと削除予約の配置は連携仕様書に従う。
+- OpenGepaのPowerShellスクリプトを参照し、`dotnet publish` に `-c Release`、`-r win-x64`、`--self-contained false` を明示する。発行結果の確認、README等の配布文書の配置、バージョンと対象環境を名前に含むZIPの生成を再利用する。MCP対応は対象外とし、発行対象はHandpickerStudioのWPFプロジェクトに限る。実行ファイル、必要な配布文書とライセンス文書を収録し、ZIPの内容を検証する。
+- 配布READMEには利用条件の .NET 10 Windows Desktop Runtime（x64）と、Microsoft公式ページの「.NET Desktop Runtime」からWindows x64を選ぶ手順を記載する。 [Microsoft公式の .NET 10 ダウンロード](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)
+- ビルドはリポジトリ内の成果物専用領域に毎回新しい発行用フォルダを作る。既存の展開・運用フォルダを出力先や掃除対象に使わず、archive・cacheやSuite側の共有データにも書き込まない。利用中の設定JSONや管理データを配布物に含めず、初期値を同梱する場合は利用中の設定と別ファイルにする。発行とZIPの検証が完了してから配布成果物を公開し、失敗時は直前の有効な成果物を保持する。
+- 実装開始の指示後、機能実装に先立ちHandpickerStudio用のビルドスクリプトを整備する。既存の空のWPFアプリでビルドとZIP生成を行い、.NET 10 Windows Desktop Runtime（x64）導入済みのWindows 11 x64で、展開先から標準ユーザー権限で起動・終了できることを確認する。再ビルドや失敗時に既存の設定・管理データが残ることも確認したうえで、機能実装へ進む。
 
 ## 3. プロジェクト管理
 
@@ -318,6 +327,8 @@ JPEG縮小仕様はCheckpointThumbnailExporterを参考にし、アスペクト�
 | T24 | 評価体系 | 6グループと既存アイコンを表示し、既存の `god` を他項目の編集・Import・再起動で保持する。Studioの `none` が次回Cycler実行に反映される |
 | T25 | 廃棄・連携の途中終了 | 最終処理中に中断しても別モデルを削除しない。成功済みなら予約・cache・★付与を再開し、確定できない間は再廃棄しない。別Checkpointの評価変更は可能 |
 | T26 | 実機でのごみ箱利用 | ローカル・UNC・ネットワークドライブ・大容量のCheckpointで、成功・未対応・キャンセル・部分成功を区別し、完全削除へ切り替わらない。復元先を確認する |
+| T27 | 空のWPFアプリの配布確認 | 機能実装前に `--self-contained false` を明示してRelease発行し、Windows x64向けポータブルZIPを生成する。ZIPにランタイムを含まず、READMEに必要なランタイムとMicrosoft公式ダウンロード先を記載していることを確認する。.NET 10 Windows Desktop Runtime（x64）導入済みのWindows 11 x64で、標準ユーザーが書き込み可能な展開先から起動・終了できる |
+| T28 | 再ビルド時のデータ保護 | 既存の設定・管理データを置いた展開先がある状態で、同一バージョンの再ビルドとビルド失敗を試す。展開先のデータ、archive、cache、共有評価DB・予約が保たれ、生成ZIPに既存のユーザーデータが含まれない。失敗時は直前の有効なZIPを保持する |
 
 ## 12. 未決事項・詳細設計への引継ぎ
 
@@ -335,8 +346,8 @@ JPEG縮小仕様はCheckpointThumbnailExporterを参考にし、アスペクト�
 
 | ID | 項目 | 検討内容 |
 |---|---|---|
-| D01 | 技術構成 | MVVM・画像処理ライブラリ、非同期処理、配布方式、GPL-3.0互換性 |
-| D02 | プロジェクト設定 | 保存形式・場所、CheckpointルートとComfyUI相対パス基準、評価DB参照先 |
+| D01 | 技術構成 | MVVM・画像処理ライブラリ、非同期処理、GPL-3.0互換性 |
+| D02 | プロジェクト設定 | 設定JSONの形式とアプリケーション配下での配置、CheckpointルートとComfyUI相対パス基準、評価DB参照先 |
 | D03 | cache配置 | ローカル集約案、容量制限、プロジェクト・ルート単位の名前空間 |
 | D04 | 元画像参照 | cache JPEGから元画像の場所・拡張子を特定する方式、ファイル名衝突 |
 | D05 | 画像照合 | 現行保存形式からラベルを完全一致で抽出する条件、物理Output範囲の同定、衝突記録のバックアップと欠落時の保留 |
@@ -356,5 +367,6 @@ JPEG縮小仕様はCheckpointThumbnailExporterを参考にし、アスペクト�
 - [ComfyUI-CheckpointHandpickerSuite `0118b36`](https://github.com/ruminar/ComfyUI-CheckpointHandpickerSuite/tree/0118b365461abff4ce38cf48e0a2f8b10eeaa8d7) の `suite_nodes.py`、`.spec/tag-transfer.md`、`.spec/review-and-deletion.md`、`.spec/selection-and-cycling.md` を連携レビューの基準とした。
 - [ComfyUI-CheckpointThumbnailExporter `369cbee`](https://github.com/ruminar/ComfyUI-CheckpointThumbnailExporter/tree/369cbeea20cfacca36d13a8e4188f99ba4a8a8b3) の `checkpoint_thumbnail_exporter.py`、`.spec/CheckpointThumbnailExporter.md`、`README.md` を照合・走査・サムネイル設計の基準とした。日付バケット・永続インデックスの設計は再利用できる。ネストした変更検知と元画像の自動移動には §6.2・§7.2 の条件を適用する。
 - [ComfyUI-GMImageSaver `09e717e`](https://github.com/ruminar/ComfyUI-GMImageSaver/blob/09e717ea005de1d4ecbf01f45db8e76af3b402f3/nodes.py#L102) のラベル正規化とファイル名長制限を、保存後の照合で考慮する。各Outputで実際に使われている保存形式は設定・サンプルで確認する。
+- OpenGepaの [`build.ps1` (`eccf8f5`)](https://github.com/ruminar/OpenGepa/blob/eccf8f5c8e3408796dfac54dd2c21e8b3c6da170/build.ps1) をFramework-dependentでのRelease発行、発行結果の確認、READMEの配置、バージョン名付きZIP化の参考にする。ランタイムの案内は同じコミットの [README](https://github.com/ruminar/OpenGepa/blob/eccf8f5c8e3408796dfac54dd2c21e8b3c6da170/README.md#対応環境) を参照する。発行先と既存データの保護は本書 §2.1 に従う。
 
 上記のコミットはローカルで確認した参照点である。実装開始時は実際に連携するSuiteの版との差分を確認する。
