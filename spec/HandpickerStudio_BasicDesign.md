@@ -1,6 +1,6 @@
 # HandpickerStudio 基本設計書
 
-- 文書改訂番号：Rev. 10（ComfyUIフォルダーからの参照先検出を追加）
+- 文書改訂番号：Rev. 11（Checkpoint参照先の件数表示とペイン間のキー移動を追加）
 - 対象アプリケーションバージョン：HandpickerStudio v0.1.0
 - 作成日：2026-11-24
 - 対象：Windowsデスクトップアプリ HandpickerStudio および ComfyUI-CheckpointHandpickerSuite 連携改修
@@ -76,7 +76,7 @@ MVVM・画像処理のライブラリと非同期処理方式は詳細設計で�
 
 プロジェクトの新規登録、編集、切り替え、登録解除を行う。上部の選択UIでプロジェクトを切り替える。最後に開いたプロジェクトを次回起動時に復元する案とする。登録解除では元画像・archive・Checkpointを削除しない。
 
-ComfyUIフォルダーを指定すると、本体の `extra_model_paths.yaml` を読み、`models/checkpoints`、追加の `checkpoints`、CheckpointSave用の `output/checkpoints` を優先順に並べ、存在を確認する。検出したフォルダーをプロジェクトのモデル一覧に使う。手動設定済みのプロジェクトは従来どおり利用できる。追加設定を変更した場合はプロジェクト設定から再検出できる。
+ComfyUIフォルダーを指定すると、本体の `extra_model_paths.yaml` を読み、`models/checkpoints`、追加の `checkpoints`、CheckpointSave用の `output/checkpoints` をComfyUIと同じ優先順に並べる。`is_default: true` を指定した参照先は標準フォルダーより優先する。設定画面には存在する参照先のみを `パス (件数)` の形式で表示し、件数はサブフォルダーを含めてStudioが対象とするCheckpointを数える。一部を走査できなかった場合は `(件数+)` で確認できた件数を示す。検出した参照先の構成をプロジェクトのモデル一覧に使う。手動設定済みのプロジェクトも利用できる。追加設定を変更した場合はプロジェクト設定から再検出できる。
 
 既定および追加の `custom_nodes` では、Manager版 `checkpoint-handpicker-suite` とGit版 `ComfyUI-CheckpointHandpickerSuite` の `data` を確認し、評価JSONとStudio連携情報の有無を表示する。利用可能な評価JSONが一つなら自動選択し、複数ある場合は使用するものを選択する。同じCheckpoint相対パスが複数の参照先にある場合、表示は優先順の先頭を使い、その評価キーが共有される操作を保留する。
 
@@ -145,6 +145,7 @@ Checkpointと参照ルートはタブで切り替える。所属未確定の画�
 - Checkpointは単一選択。選択時に有効なルートから対応画像を統合表示する。評価を変更しても選択中のCheckpointとその画像一覧を引き継ぐ。
 - 空の評価も含め、`👑 god!`、`💛 favorite`、`👍 nice`、`✔ keep`、`🗑 delete`、`— none` の順にペインを縦に並べる。見出しに件数を表示し、クリックで開閉できる。各一覧は独立して縦にスクロールし、展開済みのペイン間の境界をドラッグして高さを調整できる。初期表示では件数の多い `none` に残りの高さを割り当てる。
 - 各ペイン内では、ComfyUIのWindows版と同じく、フォルダー名を含むCheckpointの相対パスを大文字・小文字を区別してUnicodeコードポイント順に並べる。
+- 一覧の末尾で下キーを押すと次の展開済みペインの先頭へ、先頭で上キーを押すと前の展開済みペインの末尾へ移動する。項目が空のペインは飛ばす。
 - Checkpointは各評価の見出しと一覧へドラッグ＆ドロップできる。空や折りたたんだペインも見出しでドロップを受け付ける。評価変更時の確認ダイアログは不要。同じ評価へのドロップは評価を維持する。`none` は未評価を表す。
 - deleteへの移動は論理評価の変更であり、物理削除ではない。
 - deleteに属するCheckpointのみ、右クリックメニューから物理削除できる。DeleteキーでのCheckpoint削除は提供しない。

@@ -76,11 +76,8 @@ internal static partial class CatalogService
                     allowMissing: Directory.Exists(Directory.GetParent(folder.Path)?.Parent?.FullName)))
                     continue;
 
-                foreach (string path in EnumerateFiles(folder.Path, Warn, token))
+                foreach (string path in EnumerateCheckpoints(folder.Path, Warn, token))
                 {
-                    if (!Path.GetExtension(path).Equals(".safetensors", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
                     string relativePath = RelativePath(folder.Path, path);
                     checkpoints.Add(new(project, relativePath, path, SafeName(relativePath), folder.Path));
                 }
@@ -364,6 +361,9 @@ internal static partial class CatalogService
             return false;
         }
     }
+
+    internal static IEnumerable<string> EnumerateCheckpoints(string path, Action<string> warn, CancellationToken token) =>
+        EnumerateFiles(path, warn, token).Where(file => Path.GetExtension(file).Equals(".safetensors", StringComparison.OrdinalIgnoreCase));
 
     private static IEnumerable<string> EnumerateFiles(string path, Action<string> warn, CancellationToken token)
     {

@@ -29,15 +29,10 @@
                                    Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,5,0,0" TextWrapping="Wrap" />
                         <StackPanel x:Name="DetectionResults" Visibility="Collapsed">
                             <TextBlock Text="Checkpointの参照先" FontWeight="SemiBold" Margin="0,10,0,5" />
-                            <ListView x:Name="DetectedFolders" MaxHeight="155" ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                      AutomationProperties.Name="Checkpointの参照先">
-                                <ListView.View>
-                                    <GridView>
-                                        <GridViewColumn Header="状態" DisplayMemberBinding="{Binding Status}" Width="105" />
-                                        <GridViewColumn Header="フォルダー" DisplayMemberBinding="{Binding Path}" Width="595" />
-                                    </GridView>
-                                </ListView.View>
-                            </ListView>
+                            <TextBox x:Name="DetectedFolders" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                                     Background="Transparent" BorderThickness="0" Padding="0" MaxHeight="155"
+                                     HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                                     AutomationProperties.Name="Checkpointの参照先" />
                             <Label Content="HandpickerSuiteのデータ" Target="{Binding ElementName=SuitePicker}" Margin="0,7,0,0" />
                             <ComboBox x:Name="SuitePicker" DisplayMemberPath="DataPath" SelectionChanged="SuiteChanged"
                                       AutomationProperties.Name="HandpickerSuiteのデータフォルダー" />

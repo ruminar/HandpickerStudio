@@ -5,12 +5,10 @@ using YamlDotNet.RepresentationModel;
 
 namespace HandpickerStudio;
 
-internal sealed record DetectedCheckpointFolder(string Path, string Status, bool AllowMissing);
-
 internal sealed record DetectedSuite(string DataPath, string EvaluationPath, bool HasEvaluation, string Details);
 
 internal sealed record ComfyUiInstallation(string SelectedPath, string RootPath, string ConfigStatus,
-    DetectedCheckpointFolder[] Checkpoints, DetectedSuite[] Suites);
+    CheckpointFolder[] Checkpoints, string[] CheckpointLines, DetectedSuite[] Suites);
 
 internal static partial class ComfyUiDiscovery
 {
@@ -30,11 +28,18 @@ internal static partial class ComfyUiDiscovery
         bool hasConfig = ReadExtraPaths(config, checkpoints, customNodes, token);
         AddFolder(checkpoints, new(Path.Combine(root, "output", "checkpoints"), AllowMissing: true), preferred: false);
 
-        var models = checkpoints.Select(folder =>
+        var checkpointLines = new List<string>();
+        foreach (var folder in checkpoints)
         {
             token.ThrowIfCancellationRequested();
-            return new DetectedCheckpointFolder(folder.Path, Status(folder.Path, directory: true), folder.AllowMissing);
-        }).ToArray();
+            if (!Directory.Exists(folder.Path))
+                continue;
+
+            bool incomplete = false;
+            int count = CatalogService.EnumerateCheckpoints(folder.Path, _ => incomplete = true, token).Count();
+            string suffix = incomplete ? "+" : "";
+            checkpointLines.Add($"{folder.Path} ({count}{suffix})");
+        }
 
         var suites = new List<DetectedSuite>();
         foreach (var folder in customNodes)
@@ -56,7 +61,7 @@ internal static partial class ComfyUiDiscovery
         }
 
         return new(selected, root, hasConfig ? "extra_model_paths.yaml を読み込みました。" : "extra_model_paths.yaml はありません。",
-            models, suites.ToArray());
+            checkpoints.ToArray(), checkpointLines.ToArray(), suites.ToArray());
     }
 
     private static bool IsComfyUi(string directory) =>

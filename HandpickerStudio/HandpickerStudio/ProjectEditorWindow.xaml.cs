@@ -79,7 +79,7 @@ public partial class ProjectEditorWindow : Window
                 var suite = SuitePicker.SelectedItem as DetectedSuite;
                 if (suite is null && detected.Suites.Count(candidate => candidate.HasEvaluation) > 1)
                     throw new ArgumentException("使用するHandpickerSuiteのデータフォルダーを選択してください。");
-                var modelFolders = detected.Checkpoints.Select(folder => new CheckpointFolder(folder.Path, folder.AllowMissing)).ToArray();
+                var modelFolders = detected.Checkpoints;
                 Result = WorkspacePaths.Normalize(new Project(projectId, NameInput.Text, modelFolders[0].Path,
                     suite?.EvaluationPath ?? "", CacheInput.Text, imageRoots,
                     detected.SelectedPath, modelFolders));
@@ -132,7 +132,10 @@ public partial class ProjectEditorWindow : Window
             installation = detected;
             DetectionStatus.Text = $"{detected.RootPath}{Environment.NewLine}{detected.ConfigStatus}";
             DetectionResults.Visibility = Visibility.Visible;
-            DetectedFolders.ItemsSource = detected.Checkpoints;
+            DetectedFolders.Text = string.Join(Environment.NewLine, detected.CheckpointLines);
+            DetectedFolders.Visibility = detected.CheckpointLines.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (detected.CheckpointLines.Length == 0)
+                DetectionStatus.Text += $"{Environment.NewLine}存在するCheckpointフォルダーが見つかりませんでした。";
             if (string.IsNullOrWhiteSpace(NameInput.Text))
                 NameInput.Text = SuggestedName(detected.SelectedPath);
             string lastSuite = preferredSuite.Length == 0 ? originalProject?.EvaluationPath ?? "" : preferredSuite;

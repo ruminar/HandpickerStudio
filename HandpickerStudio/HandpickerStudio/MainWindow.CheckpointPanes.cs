@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 
 namespace HandpickerStudio;
@@ -67,6 +68,7 @@ public partial class MainWindow
                 pane.HeaderButton.Checked += (_, _) => ArrangeCheckpointPanes();
                 pane.HeaderButton.Unchecked += (_, _) => ArrangeCheckpointPanes();
                 pane.CheckpointList.SelectionChanged += SelectCheckpoint;
+                pane.CheckpointList.PreviewKeyDown += NavigateCheckpointPanes;
                 pane.ResizeGrip.DragDelta += (_, args) => ResizeCheckpointPanes(pane, args.VerticalChange);
                 CheckpointPanes.Children.Insert(index, pane);
             }
@@ -81,6 +83,41 @@ public partial class MainWindow
         if (!synchronizingCheckpointSelection && viewModel.Groups.Length > 0 &&
             sender is ListBox { SelectedItem: Checkpoint checkpoint })
             viewModel.SelectCheckpoint(checkpoint);
+    }
+
+    private void NavigateCheckpointPanes(object sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Up or Key.Down) || Keyboard.Modifiers != ModifierKeys.None || sender is not ListBox list ||
+            viewModel.Groups.Length == 0)
+            return;
+
+        int currentIndex = e.OriginalSource is DependencyObject source &&
+            ItemsControl.ContainerFromElement(list, source) is ListBoxItem focused
+            ? list.ItemContainerGenerator.IndexFromContainer(focused) : list.SelectedIndex;
+        bool down = e.Key == Key.Down;
+        if (currentIndex < 0 || currentIndex != (down ? list.Items.Count - 1 : 0))
+            return;
+
+        var panes = CheckpointPanes.Children.OfType<CheckpointPane>().ToArray();
+        int direction = down ? 1 : -1;
+        int currentPane = Array.FindIndex(panes, pane => pane.CheckpointList == list);
+        for (int index = currentPane + direction; index >= 0 && index < panes.Length; index += direction)
+        {
+            var pane = panes[index];
+            var target = pane.CheckpointList;
+            if (!pane.IsExpanded || !target.HasItems || target.Height == 0)
+                continue;
+
+            target.SelectedIndex = down ? 0 : target.Items.Count - 1;
+            target.ScrollIntoView(target.SelectedItem);
+            target.UpdateLayout();
+            if (target.ItemContainerGenerator.ContainerFromIndex(target.SelectedIndex) is ListBoxItem container)
+                container.Focus();
+            else
+                target.Focus();
+            e.Handled = true;
+            return;
+        }
     }
 
     private void SynchronizeCheckpointSelection()
