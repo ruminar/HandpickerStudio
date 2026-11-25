@@ -24,6 +24,8 @@ internal sealed class MainViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public Project[] Projects => settings.Projects;
+    public Checkpoint? SelectedCheckpoint => selectedCheckpoint;
+    public HeldLabel[] HeldLabels => settings.HeldLabels.Concat(observedHolds).DistinctBy(CatalogService.HoldKey).ToArray();
     public bool CanSave { get; private set; } = true;
     public bool CanEditProject => CanSave && SelectedProject is not null;
     public bool UseTileView { get; private set; }

@@ -28,7 +28,7 @@ internal static class WorkspacePaths
 
     public static bool Overlap(string first, string second) => Within(first, second) || Within(second, first);
 
-    private static bool Within(string path, string root) =>
+    public static bool Within(string path, string root) =>
         path.Equals(root, StringComparison.OrdinalIgnoreCase) ||
         path.StartsWith(Path.EndsInDirectorySeparator(root) ? root : root + Path.DirectorySeparatorChar,
             StringComparison.OrdinalIgnoreCase);

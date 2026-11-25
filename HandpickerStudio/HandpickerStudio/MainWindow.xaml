@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:HandpickerStudio"
         Title="HandpickerStudio" Width="1130" Height="760" MinWidth="790" MinHeight="510"
-        Loaded="OnLoaded" Closed="OnClosed">
+        Loaded="OnLoaded" Closing="OnClosing" Closed="OnClosed">
     <Window.Resources>
         <HierarchicalDataTemplate DataType="{x:Type local:CheckpointGroup}" ItemsSource="{Binding Items}">
             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="0,4" />
@@ -102,7 +102,17 @@
                         <Button DockPanel.Dock="Bottom" Content="{Binding UnresolvedLabel}" Click="ShowUnresolved"
                                 HorizontalContentAlignment="Left" Margin="0,8,0,0" />
                         <TreeView x:Name="CheckpointTree" ItemsSource="{Binding Groups}" SelectedItemChanged="SelectCheckpoint"
+                                  AllowDrop="True" PreviewMouseLeftButtonDown="BeginCheckpointDrag" PreviewMouseMove="TrackCheckpointDrag"
+                                  DragOver="CheckpointDragOver" Drop="DropCheckpoint" PreviewMouseRightButtonDown="CheckpointMenuTarget"
+                                  ContextMenuOpening="PrepareCheckpointMenu"
                                   BorderThickness="0" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling">
+                            <TreeView.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem x:Name="RatingMenu" Header="評価を変更" />
+                                    <MenuItem x:Name="DisposeMenu" Header="Checkpointを廃棄…" Click="DisposeCheckpoint" />
+                                    <MenuItem Header="廃棄後処理を再開" Click="ResumeDisposal" />
+                                </ContextMenu>
+                            </TreeView.ContextMenu>
                             <TreeView.ItemContainerStyle>
                                 <Style TargetType="TreeViewItem">
                                     <Setter Property="IsExpanded" Value="True" />
@@ -181,8 +191,16 @@
                     <Grid>
                         <ListBox x:Name="Gallery" ItemsSource="{Binding Images}" BorderThickness="0" SelectionMode="Extended"
                                  PreviewMouseLeftButtonUp="OpenImage" KeyDown="OpenImageWithKey" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 PreviewMouseRightButtonDown="ImageMenuTarget" ContextMenuOpening="PrepareImageMenu"
                                  ScrollViewer.CanContentScroll="True"
                                  VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling">
+                            <ListBox.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem x:Name="RecycleImagesMenu" Header="ごみ箱へ移動" InputGestureText="Delete" Click="RecycleSelectedImages" />
+                                    <MenuItem x:Name="MoveImagesMenu" Header="プロジェクト・Checkpointへ移動…" Click="MoveSelectedImages" />
+                                    <MenuItem x:Name="ThumbnailMenu" Header="代表サムネイルに設定" Click="SetSelectedThumbnail" />
+                                </ContextMenu>
+                            </ListBox.ContextMenu>
                             <ListBox.Style>
                                 <Style TargetType="ListBox">
                                     <Setter Property="ItemTemplate" Value="{StaticResource ImageListTemplate}" />

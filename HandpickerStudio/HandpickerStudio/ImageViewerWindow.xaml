@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:HandpickerStudio"
         Width="960" Height="690" MinWidth="380" MinHeight="260" WindowStartupLocation="CenterOwner"
-        ShowInTaskbar="False" PreviewKeyDown="NavigateWithKey" PreviewMouseWheel="NavigateWithWheel">
+        ShowInTaskbar="False" PreviewKeyDown="NavigateWithKey" PreviewMouseWheel="NavigateWithWheel" Closing="ConfirmClose">
     <DockPanel Margin="12">
         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
@@ -17,7 +17,13 @@
             </StackPanel>
         </DockPanel>
         <TextBlock DockPanel.Dock="Bottom" Text="{Binding ElementName=Preview, Path=ToolTip}" TextWrapping="Wrap" Foreground="#9D2E19" />
-        <Border Background="#182032" CornerRadius="5" Padding="6">
+        <Border Background="#182032" CornerRadius="5" Padding="6" ContextMenuOpening="PrepareMenu">
+            <Border.ContextMenu>
+                <ContextMenu>
+                    <MenuItem x:Name="ViewerRecycle" Header="ごみ箱へ移動" InputGestureText="Delete" Click="RecycleCurrent" />
+                    <MenuItem x:Name="ViewerThumbnail" Header="代表サムネイルに設定" Click="SetCurrentThumbnail" />
+                </ContextMenu>
+            </Border.ContextMenu>
             <local:ImagePreview x:Name="Preview" DecodeLimit="3200" Stretch="Uniform" />
         </Border>
     </DockPanel>

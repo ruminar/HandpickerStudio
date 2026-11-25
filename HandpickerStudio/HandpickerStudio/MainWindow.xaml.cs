@@ -1,4 +1,5 @@
 using System.IO;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -23,6 +24,8 @@ public partial class MainWindow : Window
     }
 
     private void OnClosed(object? sender, EventArgs e) => viewModel.Cancel();
+
+    private void OnClosing(object? sender, CancelEventArgs e) => e.Cancel = operationRunning;
 
     private async void AddProject(object sender, RoutedEventArgs e) => await EditProjectAsync(null);
 
@@ -98,6 +101,12 @@ public partial class MainWindow : Window
 
     private void OpenImageWithKey(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Delete)
+        {
+            e.Handled = true;
+            RecycleSelectedImages(sender, e);
+            return;
+        }
         if (e.Key == Key.Enter && Gallery.SelectedItem is ImageEntry image)
         {
             e.Handled = true;
@@ -111,12 +120,17 @@ public partial class MainWindow : Window
             ShowImage(image);
     }
 
-    private void ShowImage(ImageEntry image)
+    private async void ShowImage(ImageEntry image)
     {
         ImageEntry[] images = viewModel.Images;
         int index = Array.IndexOf(images, image);
-        if (index >= 0)
-            new ImageViewerWindow(images, index) { Owner = this }.ShowDialog();
+        if (index >= 0 && viewModel.SelectedProject is { } project)
+        {
+            var viewer = new ImageViewerWindow(images, index, project, viewModel.SelectedCheckpoint) { Owner = this };
+            viewer.ShowDialog();
+            if (viewer.ImagesChanged)
+                await viewModel.ReloadAsync();
+        }
     }
 
     private void ShowWarnings(object sender, RoutedEventArgs e) => ShowReport("確認事項", viewModel.Warnings);

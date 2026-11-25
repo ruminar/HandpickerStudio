@@ -31,7 +31,7 @@ internal static class ArchiveDirectory
             throw new IOException($"Archiveの管理フォルダーを利用できません。{path}");
     }
 
-    private static string ResolvePath(string path, CancellationToken token)
+    public static string ResolvePath(string path, CancellationToken token = default)
     {
         var missing = new Stack<string>();
         for (DirectoryInfo? directory = new(path); directory is not null; directory = directory.Parent)
@@ -56,13 +56,18 @@ internal static class ArchiveDirectory
         catch (Exception exception) when (exception is DirectoryNotFoundException or FileNotFoundException) { return null; }
     }
 
-    private static string ResolveExistingPath(string path)
+    public static string ResolveExistingPath(string path)
     {
         const uint OpenDirectory = 0x02000000;
         using var handle = CreateFile(path, 0, FileShare.ReadWrite | FileShare.Delete, IntPtr.Zero, FileMode.Open, OpenDirectory, IntPtr.Zero);
         if (handle.IsInvalid)
             throw ResolutionError(path);
 
+        return ResolveHandlePath(handle, path);
+    }
+
+    public static string ResolveHandlePath(SafeFileHandle handle, string path)
+    {
         var buffer = new StringBuilder(512);
         uint length = GetFinalPathNameByHandle(handle, buffer, (uint)buffer.Capacity, 0);
         if (length >= buffer.Capacity)

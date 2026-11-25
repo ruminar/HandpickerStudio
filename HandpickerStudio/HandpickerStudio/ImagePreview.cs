@@ -81,6 +81,11 @@ public sealed class ImagePreview : Image
     private static BitmapSource Decode(string path, int limit)
     {
         using var stream = CatalogService.OpenForReading(path);
+        return Decode(stream, limit);
+    }
+
+    internal static BitmapSource Decode(Stream stream, int limit)
+    {
         var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.DelayCreation, BitmapCacheOption.OnDemand);
         var frame = decoder.Frames[0];
         int width = frame.PixelWidth;

@@ -11,14 +11,15 @@ internal sealed record Checkpoint(Project Project, string RelativePath, string F
     public string Name => Path.GetFileNameWithoutExtension(RelativePath);
 }
 
-internal sealed record CheckpointGroup(string Name, Checkpoint[] Items);
+internal sealed record CheckpointGroup(string Name, Checkpoint[] Items, Rating Rating);
 
 internal sealed record RootStatus(ImageRoot Root, string Status)
 {
     public string Action => Root.Enabled ? "無効にする" : "有効にする";
 }
 
-internal sealed record ImageEntry(string FullPath, string RelativePath, string Location, string? CheckpointPath, string? Problem)
+internal sealed record ImageEntry(string FullPath, string RelativePath, string Location, string? CheckpointPath, string? Problem,
+    ImageRoot Root, bool FromArchive, string[] PossibleOwners)
 {
     public string Name => Path.GetFileName(FullPath);
 }
@@ -64,8 +65,7 @@ internal static partial class CatalogService
                     continue;
 
                 string relativePath = RelativePath(project.CheckpointPath, path);
-                string safeName = UnsafeLabelCharacters().Replace(relativePath[..^".safetensors".Length], "_").Trim('_');
-                checkpoints.Add(new(project, relativePath, path, safeName.Length == 0 ? "checkpoint" : safeName));
+                checkpoints.Add(new(project, relativePath, path, SafeName(relativePath)));
             }
         }
 
@@ -87,7 +87,7 @@ internal static partial class CatalogService
         var ratings = ReadRatings(active.EvaluationPath, warnings);
         var byRating = activeCheckpoints.ToLookup(item => ratings?.GetValueOrDefault(item.RelativePath, Rating.None) ?? Rating.Unavailable);
         var groups = RatingGroups.Where(group => group.Rating != Rating.Unavailable || byRating.Contains(Rating.Unavailable))
-            .Select(group => new CheckpointGroup(group.Label, byRating[group.Rating].ToArray())).ToArray();
+            .Select(group => new CheckpointGroup(group.Label, byRating[group.Rating].ToArray(), group.Rating)).ToArray();
         return new(activeCheckpoints, groups, labels, heldLabels, report, warnings.Distinct().ToArray(), isComplete);
     }
 
@@ -116,12 +116,8 @@ internal static partial class CatalogService
                     status.ValueKind != JsonValueKind.String)
                     throw new InvalidDataException("評価レコードの形式が正しくありません。");
 
-                Rating rating = status.GetString() switch
-                {
-                    "god" => Rating.God, "favorite" => Rating.Favorite, "nice" => Rating.Nice,
-                    "keep" => Rating.Keep, "delete" => Rating.Delete, "none" => Rating.None,
-                    _ => throw new InvalidDataException("未対応の評価値があります。")
-                };
+                if (!SuiteEvaluation.ParseRating(status.GetString(), out Rating rating))
+                    throw new InvalidDataException("未対応の評価値があります。");
                 if (!ratings.TryAdd(property.Name, rating))
                     throw new InvalidDataException("評価JSONに重複したキーがあります。");
             }
@@ -174,7 +170,8 @@ internal static partial class CatalogService
                         matches.Length > 1 ? "複数のCheckpointが一致" : !catalog.IsComplete ? "照合対象の一覧が未確認" : "一致するCheckpointなし";
                     if (reason is not null && matches.Length > 0)
                         reason += " · " + string.Join("、", matches.Select(item => $"{item.Project.Name}/{item.RelativePath}"));
-                    images.Add(new(path, relativePath, $"{root.Name} / Output", owner, reason));
+                    images.Add(new(path, relativePath, $"{root.Name} / Output", owner, reason, root, false,
+                        matches.Where(item => item.Project.Id == active.Id).Select(item => item.RelativePath).ToArray()));
                 }
             }
             roots.Add(new(root, !outputAvailable ? "Outputに接続できません" :
@@ -245,7 +242,7 @@ internal static partial class CatalogService
             }
 
             images.Add(new(path, relativePath, $"{root.Name} / archive", owner,
-                owner is null ? "archiveの所属を確認できません" : null));
+                owner is null ? "archiveの所属を確認できません" : null, root, true, owner is null ? [] : [owner]));
         }
     }
 
@@ -298,6 +295,14 @@ internal static partial class CatalogService
 
     public static (string OutputPath, string Label) HoldKey(HeldLabel hold) =>
         (hold.OutputPath.ToUpperInvariant(), hold.Label.ToUpperInvariant());
+
+    public static string SafeName(string relativePath)
+    {
+        var withoutSuffix = relativePath.EndsWith(".safetensors", StringComparison.OrdinalIgnoreCase)
+            ? relativePath[..^".safetensors".Length] : relativePath;
+        string safe = UnsafeLabelCharacters().Replace(withoutSuffix, "_").Trim('_');
+        return safe.Length == 0 ? "checkpoint" : safe;
+    }
 
     private static string RelativePath(string directory, string path) => Path.GetRelativePath(directory, path).Replace('\\', '/');
 
