@@ -105,6 +105,16 @@ internal sealed class SuiteEvaluation : IDisposable
         return Save();
     }
 
+    internal string? SaveImportedRatings(IEnumerable<RatingImportChange> matches)
+    {
+        foreach (var match in matches)
+        {
+            CancelReservation(match.Checkpoint.RelativePath, "studio_rating_imported");
+            UpdateRating(match.Checkpoint, match.After);
+        }
+        return Save();
+    }
+
     private void UpdateRating(Checkpoint checkpoint, Rating rating)
     {
         if (rating == Rating.None)
@@ -338,7 +348,7 @@ internal sealed class SuiteEvaluation : IDisposable
         return rating != Rating.Unavailable;
     }
 
-    private static string RatingValue(Rating rating) => rating.ToString().ToLowerInvariant();
+    internal static string RatingValue(Rating rating) => rating.ToString().ToLowerInvariant();
 
     public void Dispose() => writerLock.Dispose();
 }

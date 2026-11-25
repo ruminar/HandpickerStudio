@@ -26,6 +26,10 @@ Checkpointの評価別ペインは、見出しをクリックすると開閉で�
 - 評価の変更とCheckpoint廃棄を使うには、連携対応版のHandpickerSuiteを起動し、生成された評価JSONを指定します。Checkpointを目的の評価の見出しや一覧へドラッグするか、一覧の右クリックから評価を変更できます。折りたたんだ評価も見出しで受け付けます。廃棄は `delete` 評価を付けてから右クリックで実行します。対象の画像生成を停止してから実行すると、画像をArchiveへ退避し、Checkpoint本体をごみ箱へ送ります。
 - Suiteの連携対応版へ切り替える際は、旧版のSuiteと古い削除スクリプトを終了し、連携対応版が出力するスクリプトを使ってください。
 
+## 評価を別のPCへ移す
+
+**評価の移行**から、選択中のプロジェクトの評価を `Anima_20261125_153000.json` のようなファイル名で書き出せます。移行先のStudioでは対象プロジェクトを選び、同じメニューのインポートからファイルを開きます。ファイル名とバイト数が一意に一致するCheckpointに適用し、既存評価を変更する場合は件数を確認します。Suiteでは **Checkpoint Tag Export / Import** の **Import File…** で同じJSONのファイル名を指定します。
+
 ## 配布ZIPのビルド
 
 アプリアイコンを組み込む場合は、ビルド前に `HandpickerStudio/HandpickerStudio/Assets/HandpickerStudio.ico` にICOファイルを置きます。

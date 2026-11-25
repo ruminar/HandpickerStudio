@@ -1,6 +1,6 @@
 # HandpickerStudio 基本設計書
 
-- 文書改訂番号：Rev. 12（Checkpointの代表画像と画像選択マークを更新）
+- 文書改訂番号：Rev. 13（Checkpoint評価のエクスポート・インポートを追加）
 - 対象アプリケーションバージョン：HandpickerStudio v0.1.0
 - 作成日：2026-11-24
 - 対象：Windowsデスクトップアプリ HandpickerStudio および ComfyUI-CheckpointHandpickerSuite 連携改修
@@ -81,6 +81,8 @@ ComfyUIフォルダーを指定すると、本体の `extra_model_paths.yaml` �
 既定および追加の `custom_nodes` では、Manager版 `checkpoint-handpicker-suite` とGit版 `ComfyUI-CheckpointHandpickerSuite` の `data` を確認し、評価JSONとStudio連携情報の有無を表示する。利用可能な評価JSONが一つなら自動選択し、複数ある場合は使用するものを選択する。同じCheckpoint相対パスが複数の参照先にある場合、表示は優先順の先頭を使い、その評価キーが共有される操作を保留する。
 
 アプリ起動時およびプロジェクト切り替え時には、対象プロジェクトの評価情報、Checkpoint一覧、cacheの整合性、走査状態を確認する。他プロジェクトのcacheや画像を削除対象にしてはならない。
+
+「評価の移行」では、選択中のプロジェクトのCheckpoint評価を `プロジェクト名_YYYYMMDD_HHMMSS.json` にエクスポートする。形式はSuite互換の `format_version: 1` とし、評価済みCheckpointのファイル名、バイト数、評価を格納する。別PCのStudioでは選択中のプロジェクトで一致先が一意なものを取り込む。既存評価が変わる場合は件数を示して確認し、一致なし、複数一致、確認後に変わった対象はスキップする。プロジェクト設定やパス、削除予約は転送しない。
 
 ### 3.3 Checkpoint名の重複検査
 

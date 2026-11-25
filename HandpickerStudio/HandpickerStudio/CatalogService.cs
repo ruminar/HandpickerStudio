@@ -67,22 +67,7 @@ internal static partial class CatalogService
         List<Checkpoint> checkpoints = [];
         List<string> warnings = [];
         foreach (Project project in projects)
-        {
-            void Warn(string error) => warnings.Add($"{project.Name}のCheckpoint一覧: {error}");
-            foreach (var folder in project.ModelFolders)
-            {
-                token.ThrowIfCancellationRequested();
-                if (folder.AllowMissing && !DirectoryAvailable(folder.Path, Warn,
-                    allowMissing: Directory.Exists(Directory.GetParent(folder.Path)?.Parent?.FullName)))
-                    continue;
-
-                foreach (string path in EnumerateCheckpoints(folder.Path, Warn, token))
-                {
-                    string relativePath = RelativePath(folder.Path, path);
-                    checkpoints.Add(new(project, relativePath, path, SafeName(relativePath), folder.Path));
-                }
-            }
-        }
+            checkpoints.AddRange(ReadCheckpoints(project, error => warnings.Add($"{project.Name}のCheckpoint一覧: {error}"), token));
 
         var labels = checkpoints.SelectMany(checkpoint => SaverLabels(checkpoint.SafeName)
                 .Select(label => (Label: label, Checkpoint: checkpoint)))
@@ -127,7 +112,24 @@ internal static partial class CatalogService
         return second.MoveNext() ? -1 : 0;
     }
 
-    private static Dictionary<string, Rating>? ReadRatings(string path, List<string> warnings)
+    internal static IEnumerable<Checkpoint> ReadCheckpoints(Project project, Action<string> warn, CancellationToken token)
+    {
+        foreach (var folder in project.ModelFolders)
+        {
+            token.ThrowIfCancellationRequested();
+            if (folder.AllowMissing && !DirectoryAvailable(folder.Path, warn,
+                allowMissing: Directory.Exists(Directory.GetParent(folder.Path)?.Parent?.FullName)))
+                continue;
+
+            foreach (string path in EnumerateCheckpoints(folder.Path, warn, token))
+            {
+                string relative = RelativePath(folder.Path, path);
+                yield return new(project, relative, path, SafeName(relative), folder.Path);
+            }
+        }
+    }
+
+    internal static Dictionary<string, Rating>? ReadRatings(string path, List<string> warnings)
     {
         if (path.Length == 0)
         {

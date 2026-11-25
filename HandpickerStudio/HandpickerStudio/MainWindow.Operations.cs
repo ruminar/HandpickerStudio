@@ -210,7 +210,7 @@ public partial class MainWindow
             await RunOperation("廃棄後処理を再開", () => CheckpointDisposal.Resume(project));
     }
 
-    private async Task RunOperation(string title, Func<string?> action, bool shell = false, bool keepGallery = false)
+    private async Task RunOperation(string title, Func<string?> action, bool shell = false, bool keepGallery = false, bool reload = true)
     {
         if (operationRunning || viewModel.IsLoading)
             return;
@@ -231,6 +231,7 @@ public partial class MainWindow
 
         if (notice is not null)
             ShowReport(title, notice);
-        await viewModel.ReloadAsync(keepGallery);
+        if (reload)
+            await viewModel.ReloadAsync(keepGallery);
     }
 }
