@@ -28,7 +28,9 @@ internal sealed class MainViewModel : INotifyPropertyChanged
     public HeldLabel[] HeldLabels => settings.HeldLabels.Concat(observedHolds).DistinctBy(CatalogService.HoldKey).ToArray();
     public bool CanSave { get; private set; } = true;
     public bool CanEditProject => CanSave && SelectedProject is not null;
-    public bool UseTileView { get; private set; }
+    public GalleryLayout GalleryView { get; private set; }
+    public int GalleryViewIndex => (int)GalleryView;
+    public int TileSize { get; private set; } = WorkspaceSettings.DefaultTileSize;
     public bool IsLoading { get; private set; }
     public CheckpointGroup[] Groups { get; private set; } = [];
     public RootStatus[] Roots { get; private set; } = [];
@@ -80,8 +82,12 @@ internal sealed class MainViewModel : INotifyPropertyChanged
             Changed(nameof(CanSave));
         }
 
-        UseTileView = settings.UseTileView;
-        Changed(nameof(UseTileView));
+        GalleryView = settings.Layout is { } layout && Enum.IsDefined(layout) ? layout :
+            settings.UseTileView ? GalleryLayout.Tiles : GalleryLayout.List;
+        TileSize = Math.Clamp(settings.TileSize, WorkspaceSettings.MinimumTileSize, WorkspaceSettings.MaximumTileSize);
+        Changed(nameof(GalleryView));
+        Changed(nameof(GalleryViewIndex));
+        Changed(nameof(TileSize));
         UpdateProjects(settings.Projects.FirstOrDefault(project => project.Id == settings.SelectedProjectId) ??
             settings.Projects.FirstOrDefault());
         await ReloadAsync();
@@ -147,15 +153,28 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         UpdateGallery();
     }
 
-    public void ChangeGalleryView(bool useTiles)
+    public void ChangeGalleryView(GalleryLayout layout)
     {
-        if (UseTileView == useTiles)
+        if (GalleryView == layout)
             return;
 
-        UseTileView = useTiles;
-        Changed(nameof(UseTileView));
+        GalleryView = layout;
+        Changed(nameof(GalleryView));
+        Changed(nameof(GalleryViewIndex));
         if (CanSave)
-            TrySave(settings with { UseTileView = useTiles });
+            TrySave(settings with { Layout = layout, UseTileView = layout != GalleryLayout.List });
+    }
+
+    public void ChangeTileSize(int size)
+    {
+        size = Math.Clamp(size, WorkspaceSettings.MinimumTileSize, WorkspaceSettings.MaximumTileSize);
+        if (TileSize == size)
+            return;
+
+        TileSize = size;
+        Changed(nameof(TileSize));
+        if (CanSave)
+            TrySave(settings with { TileSize = size });
     }
 
     public async Task ReloadAsync()

@@ -10,6 +10,7 @@ namespace HandpickerStudio;
 public partial class MainWindow : Window
 {
     private readonly MainViewModel viewModel = new(new SettingsStore(Path.Combine(AppContext.BaseDirectory, "settings.json")));
+    private int tileWheelRemainder;
 
     public MainWindow()
     {
@@ -56,11 +57,32 @@ public partial class MainWindow : Window
 
     private async void Reload(object sender, RoutedEventArgs e) => await viewModel.ReloadAsync();
 
-    private void ChangeGalleryView(object sender, RoutedEventArgs e)
+    private void ChangeGalleryView(object sender, SelectionChangedEventArgs e)
     {
-        viewModel.ChangeGalleryView(ReferenceEquals(sender, TileViewOption));
+        if (sender is not ComboBox { SelectedIndex: >= 0 } picker)
+            return;
+
+        tileWheelRemainder = 0;
+        viewModel.ChangeGalleryView((GalleryLayout)picker.SelectedIndex);
         if (Gallery?.SelectedItem is ImageEntry selected)
             Gallery.ScrollIntoView(selected);
+    }
+
+    private void ResizeTilesWithWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (viewModel.GalleryView == GalleryLayout.List || !Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        {
+            tileWheelRemainder = 0;
+            return;
+        }
+
+        const int wheelDelta = 120;
+        tileWheelRemainder += e.Delta;
+        int steps = tileWheelRemainder / wheelDelta;
+        tileWheelRemainder %= wheelDelta;
+        if (steps != 0)
+            viewModel.ChangeTileSize(viewModel.TileSize + steps * 24);
+        e.Handled = true;
     }
 
     private void SelectCheckpoint(object sender, RoutedPropertyChangedEventArgs<object> e)
@@ -93,10 +115,14 @@ public partial class MainWindow : Window
 
     private void OpenImage(object sender, MouseButtonEventArgs e)
     {
-        if (Keyboard.Modifiers != ModifierKeys.None || e.OriginalSource is not DependencyObject source)
+        if (e.ChangedButton != MouseButton.Left || Keyboard.Modifiers != ModifierKeys.None ||
+            e.OriginalSource is not DependencyObject source)
             return;
         if (ItemsControl.ContainerFromElement(Gallery, source) is ListBoxItem { DataContext: ImageEntry image })
+        {
+            e.Handled = true;
             ShowImage(image);
+        }
     }
 
     private void OpenImageWithKey(object sender, KeyEventArgs e)

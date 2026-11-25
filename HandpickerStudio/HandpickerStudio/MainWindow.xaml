@@ -46,7 +46,7 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <Border Background="{StaticResource CanvasBrush}" CornerRadius="3">
-                        <local:ImagePreview FilePath="{Binding FullPath}" DecodeLimit="280" Stretch="Uniform" />
+                        <local:ImagePreview FilePath="{Binding FullPath}" DecodeLimit="420" Stretch="Uniform" />
                     </Border>
                     <StackPanel Grid.Row="1" Margin="2,4,2,0">
                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
@@ -55,8 +55,16 @@
                 </Grid>
             </Border>
         </DataTemplate>
+        <DataTemplate x:Key="SimpleImageTileTemplate">
+            <Border Background="{StaticResource CanvasBrush}" CornerRadius="3" Margin="2">
+                <local:ImagePreview FilePath="{Binding FullPath}" DecodeLimit="420" Stretch="Uniform" />
+            </Border>
+        </DataTemplate>
         <ItemsPanelTemplate x:Key="ImageTilePanel">
-            <local:VirtualizingTilePanel ClipToBounds="True" />
+            <local:VirtualizingTilePanel TileSize="{Binding TileSize}" ClipToBounds="True" />
+        </ItemsPanelTemplate>
+        <ItemsPanelTemplate x:Key="SimpleImageTilePanel">
+            <local:VirtualizingTilePanel TileSize="{Binding TileSize}" ImageOnly="True" ClipToBounds="True" />
         </ItemsPanelTemplate>
     </Window.Resources>
 
@@ -167,22 +175,13 @@
                                 </Style>
                             </Button.Style>
                         </Button>
-                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                            <RadioButton GroupName="GalleryView" Content="一覧" Checked="ChangeGalleryView" Margin="0,0,10,0">
-                                <RadioButton.Style>
-                                    <Style TargetType="RadioButton">
-                                        <Setter Property="IsChecked" Value="True" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding UseTileView}" Value="True">
-                                                <Setter Property="IsChecked" Value="False" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </RadioButton.Style>
-                            </RadioButton>
-                            <RadioButton x:Name="TileViewOption" GroupName="GalleryView" Content="タイル" Checked="ChangeGalleryView"
-                                         IsChecked="{Binding UseTileView, Mode=OneWay}" />
-                        </StackPanel>
+                        <ComboBox x:Name="GalleryViewPicker" DockPanel.Dock="Right" VerticalAlignment="Center" MinWidth="106"
+                                  AutomationProperties.Name="画像の表示形式" ToolTip="タイルでは Ctrl＋ホイールでサイズを変更"
+                                  SelectedIndex="{Binding GalleryViewIndex, Mode=OneWay}" SelectionChanged="ChangeGalleryView">
+                            <ComboBoxItem Content="一覧" />
+                            <ComboBoxItem Content="タイル" />
+                            <ComboBoxItem Content="タイル(簡易)" />
+                        </ComboBox>
                         <StackPanel>
                             <TextBlock Text="{Binding GalleryTitle}" FontSize="22" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                             <TextBlock Text="{Binding GalleryContext}" Foreground="{StaticResource SecondaryTextBrush}" TextTrimming="CharacterEllipsis" />
@@ -190,7 +189,8 @@
                     </DockPanel>
                     <Grid>
                         <ListBox x:Name="Gallery" ItemsSource="{Binding Images}" BorderThickness="0" SelectionMode="Extended"
-                                 PreviewMouseLeftButtonUp="OpenImage" KeyDown="OpenImageWithKey" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 PreviewMouseDoubleClick="OpenImage" PreviewMouseWheel="ResizeTilesWithWheel" KeyDown="OpenImageWithKey"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  PreviewMouseRightButtonDown="ImageMenuTarget" ContextMenuOpening="PrepareImageMenu"
                                  ScrollViewer.CanContentScroll="True"
                                  VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling">
@@ -205,9 +205,13 @@
                                 <Style TargetType="ListBox">
                                     <Setter Property="ItemTemplate" Value="{StaticResource ImageListTemplate}" />
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding UseTileView}" Value="True">
+                                        <DataTrigger Binding="{Binding GalleryView}" Value="{x:Static local:GalleryLayout.Tiles}">
                                             <Setter Property="ItemTemplate" Value="{StaticResource ImageTileTemplate}" />
                                             <Setter Property="ItemsPanel" Value="{StaticResource ImageTilePanel}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding GalleryView}" Value="{x:Static local:GalleryLayout.SimpleTiles}">
+                                            <Setter Property="ItemTemplate" Value="{StaticResource SimpleImageTileTemplate}" />
+                                            <Setter Property="ItemsPanel" Value="{StaticResource SimpleImageTilePanel}" />
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
@@ -216,6 +220,7 @@
                                 <Style TargetType="ListBoxItem">
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                     <Setter Property="Padding" Value="3" />
+                                    <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
                                 </Style>
                             </ListBox.ItemContainerStyle>
                         </ListBox>

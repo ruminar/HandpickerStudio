@@ -9,9 +9,14 @@ internal sealed record Project(Guid Id, string Name, string CheckpointPath, stri
 
 internal sealed record HeldLabel(string OutputPath, string Label);
 
+internal enum GalleryLayout { List, Tiles, SimpleTiles }
+
 internal sealed record WorkspaceSettings(int Version, Project[] Projects, Guid? SelectedProjectId, HeldLabel[] HeldLabels,
-    bool UseTileView = false)
+    bool UseTileView = false, GalleryLayout? Layout = null, int TileSize = WorkspaceSettings.DefaultTileSize)
 {
+    public const int DefaultTileSize = 174;
+    public const int MinimumTileSize = 96;
+    public const int MaximumTileSize = 420;
     public static WorkspaceSettings Empty { get; } = new(1, [], null, []);
 }
 

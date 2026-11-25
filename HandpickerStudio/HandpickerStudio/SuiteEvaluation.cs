@@ -15,6 +15,7 @@ internal sealed class SuiteEvaluation : IDisposable
     private readonly FileStream writerLock;
     private readonly string databasePath;
     private readonly string queuePath;
+    private readonly string? outputCheckpointPath;
     private readonly string recordDirectory;
     private readonly string[] roots;
     private readonly JsonObject database;
@@ -41,6 +42,7 @@ internal sealed class SuiteEvaluation : IDisposable
                 throw new InvalidDataException("HandpickerSuiteの連携情報を確認できません。");
             roots = checkpointRoots.Select(item => WorkspacePaths.Normalize(item!.GetValue<string>())).ToArray();
             queuePath = queue;
+            outputCheckpointPath = GetOutputCheckpointPath(queuePath);
             database = ReadObject(databasePath);
             if (database["version"]?.GetValue<int>() != 1 || database["statuses"] is not JsonObject entries)
                 throw new InvalidDataException("評価JSONの形式に対応していません。");
@@ -67,10 +69,8 @@ internal sealed class SuiteEvaluation : IDisposable
 
         using var file = VerifiedFile.Open(checkpoint.FullPath, checkpoint.Project.CheckpointPath);
         int matches = 0;
-        foreach (string root in roots)
+        foreach (string root in AvailableCheckpointRoots())
         {
-            if (!Directory.Exists(root))
-                throw new IOException($"SuiteのCheckpoint参照先を確認できません。{root}");
             string candidate = Path.Combine(root, checkpoint.RelativePath.Replace('/', Path.DirectorySeparatorChar));
             FileAttributes attributes;
             try { attributes = File.GetAttributes(candidate); }
@@ -126,8 +126,46 @@ internal sealed class SuiteEvaluation : IDisposable
             throw new IOException("このCheckpointの廃棄結果が確定していません。廃棄記録を確認してください。");
     }
 
-    public bool IsOutsideCheckpointRoots(string path) => roots.All(root => !WorkspacePaths.Overlap(
-        ArchiveDirectory.ResolveExistingPath(root), ArchiveDirectory.ResolvePath(path)));
+    public bool IsOutsideCheckpointRoots(string path)
+    {
+        string resolved = ArchiveDirectory.ResolvePath(path);
+        return AvailableCheckpointRoots().All(root => !WorkspacePaths.Overlap(ArchiveDirectory.ResolveExistingPath(root), resolved));
+    }
+
+    private IEnumerable<string> AvailableCheckpointRoots()
+    {
+        foreach (string root in roots)
+        {
+            FileAttributes attributes;
+            try { attributes = File.GetAttributes(root); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                // ComfyUI registers this CheckpointSave location even before a model has been saved there.
+                if (error is FileNotFoundException or DirectoryNotFoundException &&
+                    root.Equals(outputCheckpointPath, StringComparison.OrdinalIgnoreCase) &&
+                    Directory.Exists(Path.GetDirectoryName(root)))
+                    continue;
+                throw new IOException($"SuiteのCheckpoint参照先を確認できません。{root}", error);
+            }
+
+            if (!attributes.HasFlag(FileAttributes.Directory))
+                throw new IOException($"SuiteのCheckpoint参照先がフォルダーではありません。{root}");
+            yield return root;
+        }
+    }
+
+    private static string? GetOutputCheckpointPath(string queue)
+    {
+        // The existing Suite manifest locates the queue below ComfyUI's configured output directory.
+        var scripts = Directory.GetParent(queue);
+        if (scripts?.Parent?.Parent is not { } output ||
+            !scripts.Name.Equals("delete_scripts", StringComparison.OrdinalIgnoreCase) ||
+            !scripts.Parent!.Name.Equals("CheckpointHandpickerSuite", StringComparison.OrdinalIgnoreCase) ||
+            !Path.GetFileName(queue).Equals("checkpoint_delete_queue.jsonl", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        return Path.Combine(output.FullName, "checkpoints");
+    }
 
     public DisposalRecord[] Pending()
     {

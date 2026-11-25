@@ -8,10 +8,27 @@ namespace HandpickerStudio;
 
 public sealed class VirtualizingTilePanel : VirtualizingPanel, IScrollInfo
 {
-    private const double MinimumTileWidth = 174;
-    private const double TileHeight = 154;
+    public static readonly DependencyProperty TileSizeProperty = DependencyProperty.Register(nameof(TileSize), typeof(int),
+        typeof(VirtualizingTilePanel), new FrameworkPropertyMetadata(WorkspaceSettings.DefaultTileSize, FrameworkPropertyMetadataOptions.AffectsMeasure));
+
+    public static readonly DependencyProperty ImageOnlyProperty = DependencyProperty.Register(nameof(ImageOnly), typeof(bool),
+        typeof(VirtualizingTilePanel), new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsMeasure));
+
     private int columns = 1;
     private double tileWidth;
+    private double tileHeight;
+
+    public int TileSize
+    {
+        get => (int)GetValue(TileSizeProperty);
+        set => SetValue(TileSizeProperty, value);
+    }
+
+    public bool ImageOnly
+    {
+        get => (bool)GetValue(ImageOnlyProperty);
+        set => SetValue(ImageOnlyProperty, value);
+    }
 
     public bool CanHorizontallyScroll { get; set; }
     public bool CanVerticallyScroll { get; set; } = true;
@@ -30,12 +47,20 @@ public sealed class VirtualizingTilePanel : VirtualizingPanel, IScrollInfo
             return default;
 
         int count = owner.Items.Count;
-        double width = double.IsPositiveInfinity(availableSize.Width) ? MinimumTileWidth : availableSize.Width;
-        columns = Math.Max(1, (int)(width / MinimumTileWidth));
-        tileWidth = width / columns;
-        double extent = Math.Ceiling((double)count / columns) * TileHeight;
+        double width = double.IsPositiveInfinity(availableSize.Width) ? TileSize : availableSize.Width;
+        double anchorRow = tileHeight > 0 ? VerticalOffset / tileHeight : 0;
+        int firstVisible = (int)anchorRow * columns;
+        tileWidth = Math.Min(width, TileSize);
+        int newColumns = Math.Max(1, (int)(width / Math.Max(1, tileWidth)));
+        double newTileHeight = Math.Max(1, ImageOnly ? tileWidth : tileWidth * 2 / 3 + 38);
+        double offset = VerticalOffset;
+        if (columns != newColumns || tileHeight != newTileHeight)
+            offset = (firstVisible / newColumns + anchorRow % 1) * newTileHeight;
+        columns = newColumns;
+        tileHeight = newTileHeight;
+        double extent = Math.Ceiling((double)count / columns) * tileHeight;
         double height = double.IsPositiveInfinity(availableSize.Height) ? extent : availableSize.Height;
-        double offset = Math.Clamp(VerticalOffset, 0, Math.Max(0, extent - height));
+        offset = Math.Clamp(offset, 0, Math.Max(0, extent - height));
         if (ViewportWidth != width || ViewportHeight != height || ExtentHeight != extent || VerticalOffset != offset)
         {
             ViewportWidth = width;
@@ -46,8 +71,8 @@ public sealed class VirtualizingTilePanel : VirtualizingPanel, IScrollInfo
         }
 
         // Realize the viewport and one extra row on either side for smooth scrolling.
-        int first = Math.Min(count, Math.Max(0, (int)(offset / TileHeight) - 1) * columns);
-        int end = Math.Min(count, ((int)Math.Ceiling((offset + height) / TileHeight) + 1) * columns);
+        int first = Math.Min(count, Math.Max(0, (int)(offset / tileHeight) - 1) * columns);
+        int end = Math.Min(count, ((int)Math.Ceiling((offset + height) / tileHeight) + 1) * columns);
         var children = InternalChildren;
         var generator = ItemContainerGenerator;
         for (int child = children.Count - 1; child >= 0; child--)
@@ -81,7 +106,7 @@ public sealed class VirtualizingTilePanel : VirtualizingPanel, IScrollInfo
                             InsertInternalChild(child, element);
                         generator.PrepareItemContainer(element);
                     }
-                    element.Measure(new Size(tileWidth, TileHeight));
+                    element.Measure(new Size(tileWidth, tileHeight));
                 }
             }
         }
@@ -133,18 +158,18 @@ public sealed class VirtualizingTilePanel : VirtualizingPanel, IScrollInfo
     }
 
     private Rect GetTileRect(int index) =>
-        new(index % columns * tileWidth, index / columns * TileHeight - VerticalOffset, tileWidth, TileHeight);
+        new(index % columns * tileWidth, index / columns * tileHeight - VerticalOffset, tileWidth, tileHeight);
 
     private bool ScrollToTile(int index)
     {
         if (index < 0)
             return false;
         double originalOffset = VerticalOffset;
-        double top = index / columns * TileHeight;
+        double top = index / columns * tileHeight;
         if (top < VerticalOffset)
             SetVerticalOffset(top);
-        else if (top + TileHeight > VerticalOffset + ViewportHeight)
-            SetVerticalOffset(Math.Min(top, top + TileHeight - ViewportHeight));
+        else if (top + tileHeight > VerticalOffset + ViewportHeight)
+            SetVerticalOffset(Math.Min(top, top + tileHeight - ViewportHeight));
         return originalOffset != VerticalOffset;
     }
 
