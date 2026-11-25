@@ -141,32 +141,36 @@ internal static partial class CatalogService
         {
             using var stream = OpenForReading(path);
             using var document = JsonDocument.Parse(stream);
-            var root = document.RootElement;
-            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("version", out var version) ||
-                version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out int number) || number != 1 ||
-                !root.TryGetProperty("statuses", out var statuses) || statuses.ValueKind != JsonValueKind.Object)
-                throw new InvalidDataException("version 1の評価DBを指定してください。");
-
-            var ratings = new Dictionary<string, Rating>(StringComparer.Ordinal);
-            foreach (var property in statuses.EnumerateObject())
-            {
-                if (property.Value.ValueKind != JsonValueKind.Object || !property.Value.TryGetProperty("status", out var status) ||
-                    status.ValueKind != JsonValueKind.String)
-                    throw new InvalidDataException("評価レコードの形式が正しくありません。");
-
-                if (!SuiteEvaluation.ParseRating(status.GetString(), out Rating rating))
-                    throw new InvalidDataException("未対応の評価値があります。");
-                if (!ratings.TryAdd(property.Name, rating))
-                    throw new InvalidDataException("評価JSONに重複したキーがあります。");
-            }
-
-            return ratings;
+            return ParseRatings(document.RootElement);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
         {
             warnings.Add($"評価JSONを読み込めません。{exception.Message}");
             return null;
         }
+    }
+
+    internal static Dictionary<string, Rating> ParseRatings(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("version", out var version) ||
+            version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out int number) || number != 1 ||
+            !root.TryGetProperty("statuses", out var statuses) || statuses.ValueKind != JsonValueKind.Object)
+            throw new InvalidDataException("version 1の評価DBを指定してください。");
+
+        var ratings = new Dictionary<string, Rating>(StringComparer.Ordinal);
+        foreach (var property in statuses.EnumerateObject())
+        {
+            if (property.Value.ValueKind != JsonValueKind.Object || !property.Value.TryGetProperty("status", out var status) ||
+                status.ValueKind != JsonValueKind.String)
+                throw new InvalidDataException("評価レコードの形式が正しくありません。");
+
+            if (!SuiteEvaluation.ParseRating(status.GetString(), out Rating rating))
+                throw new InvalidDataException("未対応の評価値があります。");
+            if (!ratings.TryAdd(property.Name, rating))
+                throw new InvalidDataException("評価JSONに重複したキーがあります。");
+        }
+
+        return ratings;
     }
 
     public static ImageScan ReadImages(Project active, Catalog catalog, HeldLabel[] holds, CancellationToken token)

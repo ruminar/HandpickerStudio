@@ -1,6 +1,6 @@
 # HandpickerStudio 基本設計書
 
-- 文書改訂番号：Rev. 16（Checkpointの複数選択と一括評価変更を追加）
+- 文書改訂番号：Rev. 17（Checkpoint廃棄履歴の評価移行を追加）
 - 対象アプリケーションバージョン：HandpickerStudio v0.1.0
 - 作成日：2026-11-24
 - 対象：Windowsデスクトップアプリ HandpickerStudio および ComfyUI-CheckpointHandpickerSuite 連携改修
@@ -83,6 +83,8 @@ ComfyUIフォルダーを指定すると、本体の `extra_model_paths.yaml` �
 アプリ起動時およびプロジェクト切り替え時には、対象プロジェクトの評価情報、Checkpoint一覧、cacheの整合性、走査状態を確認する。他プロジェクトのcacheや画像を削除対象にしてはならない。
 
 「評価の移行」では、選択中のプロジェクトのCheckpoint評価を `プロジェクト名_YYYYMMDD_HHMMSS.json` にエクスポートする。形式はSuite互換の `format_version: 1` とし、評価済みCheckpointのファイル名、バイト数、評価を格納する。別PCのStudioでは選択中のプロジェクトで一致先が一意なものを取り込む。既存評価が変わる場合は件数を示して確認し、一致なし、複数一致、確認後に変わった対象はスキップする。プロジェクト設定やパス、削除予約は転送しない。
+
+Studioで今後ごみ箱への移動が確定したCheckpointは、プロジェクト単位でファイル名とバイト数を評価DBの履歴に残す。廃棄済みのモデルは移行JSONの評価一覧に `delete` として含める。同じファイルに現在の明示的な評価があればその評価を優先する。移行JSONには廃棄履歴も含め、移行先Studioでモデルが見つからないときも履歴の保存と再エクスポートを可能にする。移行によるCheckpointの廃棄や削除予約の生成は行わない。
 
 ### 3.3 Checkpoint名の重複検査
 

@@ -1,6 +1,6 @@
 # HandpickerStudio・HandpickerSuite 連携仕様書
 
-- 文書改訂番号：Rev. 1（初版）
+- 文書改訂番号：Rev. 2（Studioで確定した廃棄履歴の移行を追加）
 - 対象アプリケーションバージョン：HandpickerStudio v0.1.0
 - 対応文書：[HandpickerStudio 基本設計書](HandpickerStudio_BasicDesign.md)
 - 対象：Studio（C# / .NET 10）とSuite（ComfyUI上のPython）、Suiteの削除スクリプト
@@ -21,6 +21,8 @@ StudioはSuite未起動時も既存の評価を読み書きできる構成とす
 Studioの各プロジェクトは、同じSuite環境に属する評価DB、ComfyUIのCheckpoint相対パスを解決する基準ルート、Suite側の予約先を対応付ける。共用画像Outputから予約先を推測しない。複数のSuite環境が同じDBを参照する構成では、予約先と協調する更新者の範囲を一意に確認できた場合にだけ共有書き込みを有効にする。異なる物理Checkpointに同じDB・相対パスが割り当たる場合は更新・廃棄を止める。同じ実ファイルが異なる評価DB・キーで管理される場合も、共通の廃棄判定ができる構成に直すまで廃棄を保留する。
 
 別PCへの評価移行には、Suite互換形式の評価JSONを使用する。要素は `file_name`、`file_size`、`tag` とし、評価DBの相対パスは移行先で解決する。Suiteの自動Importは規定名の最新JSONを読み込み、既存評価を維持する。ファイル名を明示したImportでは、確認した既存評価の上書きを許可する。移行で `delete` を取り込んでも削除予約は生成しない。
+
+Studioはごみ箱への移動が確定したCheckpointを、評価DBの任意項目 `studio_deleted_checkpoints` にプロジェクトID別の履歴として保存する。評価移行JSONにはパスやプロジェクトIDを含まない履歴一覧を任意項目として格納し、既存の `evaluations` にも `delete` を含める。Suiteは従来の評価一覧を取り込める。Studio同士では履歴一覧も引き継ぐ。
 
 ## 2. Checkpointの識別と評価値
 

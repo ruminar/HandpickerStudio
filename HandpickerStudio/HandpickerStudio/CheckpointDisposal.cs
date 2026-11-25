@@ -9,6 +9,7 @@ internal static class CheckpointDisposal
     {
         using var suite = new SuiteEvaluation(checkpoint.Project);
         suite.RequireIdle(checkpoint.RelativePath);
+        suite.ValidateDisposalHistory();
         if (suite.GetRating(checkpoint.RelativePath) != Rating.Delete)
             throw new IOException("delete評価のCheckpointだけを廃棄できます。");
         return suite.VerifyCheckpoint(checkpoint);
@@ -40,7 +41,7 @@ internal static class CheckpointDisposal
         using var process = Process.GetCurrentProcess();
         var record = new DisposalRecord(operation, project.Id, checkpoint.RelativePath, checkpoint.FullPath,
             Path.Combine(directory, Path.GetFileName(checkpoint.FullPath)), "prepared", expected, Environment.MachineName,
-            process.Id, process.StartTime.ToUniversalTime().Ticks);
+            process.Id, process.StartTime.ToUniversalTime().Ticks, RememberForTransfer: true);
 
         if (project.Roots.Any(root => WorkspacePaths.Overlap(root.OutputPath, directory) || WorkspacePaths.Overlap(root.ArchivePath, directory)))
             throw new IOException("画像の参照範囲外に廃棄用の作業場所を確保してください。");
@@ -48,6 +49,7 @@ internal static class CheckpointDisposal
         using (var suite = new SuiteEvaluation(project))
         {
             suite.RequireIdle(checkpoint.RelativePath);
+            suite.ValidateDisposalHistory();
             if (suite.GetRating(checkpoint.RelativePath) != Rating.Delete || suite.VerifyCheckpoint(checkpoint) != expected)
                 throw new IOException("画像の退避中に評価またはCheckpointが変わりました。");
             if (!suite.IsOutsideCheckpointRoots(directory))

@@ -30,6 +30,8 @@ Checkpointの評価別ペインは、見出しをクリックすると開閉で�
 
 **評価の移行**から、選択中のプロジェクトの評価を `Anima_20261125_153000.json` のようなファイル名で書き出せます。移行先のStudioでは対象プロジェクトを選び、同じメニューのインポートからファイルを開きます。ファイル名とバイト数が一意に一致するCheckpointに適用し、既存評価を変更する場合は件数を確認します。Suiteでは **Checkpoint Tag Export / Import** の **Import File…** で同じJSONのファイル名を指定します。
 
+この機能の導入後にStudioで廃棄したCheckpointは、ファイル名とバイト数を記録し、移行時に `delete` 評価として引き継げます。移行先Studioにファイルがない場合も廃棄履歴は残ります。
+
 ## 配布ZIPのビルド
 
 アプリアイコンを組み込む場合は、ビルド前に `HandpickerStudio/HandpickerStudio/Assets/HandpickerStudio.ico` にICOファイルを置きます。

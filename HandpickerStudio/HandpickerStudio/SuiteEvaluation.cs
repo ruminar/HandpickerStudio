@@ -7,7 +7,7 @@ using System.Text.Json.Nodes;
 namespace HandpickerStudio;
 
 internal sealed record DisposalRecord(Guid Id, Guid ProjectId, string Key, string OriginalPath, string StagedPath, string Phase,
-    FileStamp Stamp, string Machine, int ProcessId, long ProcessStarted);
+    FileStamp Stamp, string Machine, int ProcessId, long ProcessStarted, bool RememberForTransfer = false);
 
 internal sealed class SuiteEvaluation : IDisposable
 {
@@ -20,6 +20,7 @@ internal sealed class SuiteEvaluation : IDisposable
     private readonly string[] roots;
     private readonly JsonObject database;
     private readonly JsonObject statuses;
+    private readonly Guid projectId;
 
     public static string ManifestPath(Project project) => Path.Combine(Path.GetDirectoryName(project.EvaluationPath)!, "checkpoint_studio.json");
 
@@ -29,6 +30,7 @@ internal sealed class SuiteEvaluation : IDisposable
     {
         if (!IsConfigured(project))
             throw new IOException("HandpickerSuiteの連携対応版を起動してから評価を変更してください。");
+        projectId = project.Id;
         databasePath = project.EvaluationPath;
         string dataPath = Path.GetDirectoryName(databasePath)!;
         recordDirectory = Path.Combine(dataPath, "checkpoint_studio_disposals");
@@ -136,14 +138,16 @@ internal sealed class SuiteEvaluation : IDisposable
         return true;
     }
 
-    internal string? SaveImportedRatings(IEnumerable<RatingImportChange> matches)
+    internal string? SaveImportedRatings(IReadOnlyCollection<RatingImportChange> matches, IReadOnlyCollection<DeletedCheckpoint> deleted,
+        out int historyAdded)
     {
+        historyAdded = DeletedCheckpointHistory.Remember(database, projectId, deleted);
         foreach (var match in matches)
         {
             CancelReservation(match.Checkpoint.RelativePath, "studio_rating_imported");
             UpdateRating(match.Checkpoint, match.After);
         }
-        return Save();
+        return matches.Count > 0 || historyAdded > 0 ? Save() : null;
     }
 
     private void UpdateRating(Checkpoint checkpoint, Rating rating)
@@ -242,12 +246,16 @@ internal sealed class SuiteEvaluation : IDisposable
 
     private string RecordPath(DisposalRecord record) => Path.Combine(recordDirectory, record.Id.ToString("N") + ".json");
 
+    public void ValidateDisposalHistory() => DeletedCheckpointHistory.ValidateProject(database, projectId);
+
     public string? FinishDisposal(DisposalRecord record)
     {
         if (record.Phase != "recycled")
             throw new IOException("ごみ箱への移動結果が確定していません。");
         VerifyRecord(record);
         CancelReservation(record.Key, "studio_checkpoint_recycled");
+        if (record.RememberForTransfer)
+            DeletedCheckpointHistory.Remember(database, record.ProjectId, [new(Path.GetFileName(record.OriginalPath), record.Stamp.Length)]);
         if (GetRating(record.Key) == Rating.Delete)
             statuses.Remove(record.Key);
         return Save();
