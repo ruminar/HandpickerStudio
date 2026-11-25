@@ -28,6 +28,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
     public HeldLabel[] HeldLabels => settings.HeldLabels.Concat(observedHolds).DistinctBy(CatalogService.HoldKey).ToArray();
     public bool CanSave { get; private set; } = true;
     public bool CanEditProject => CanSave && SelectedProject is not null;
+    public AppearanceTheme Appearance => settings.Appearance == AppearanceTheme.Dark ? AppearanceTheme.Dark : AppearanceTheme.Light;
     public GalleryLayout GalleryView { get; private set; }
     public int GalleryViewIndex => (int)GalleryView;
     public int TileSize { get; private set; } = WorkspaceSettings.DefaultTileSize;
@@ -85,6 +86,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         GalleryView = settings.Layout is { } layout && Enum.IsDefined(layout) ? layout :
             settings.UseTileView ? GalleryLayout.Tiles : GalleryLayout.List;
         TileSize = Math.Clamp(settings.TileSize, WorkspaceSettings.MinimumTileSize, WorkspaceSettings.MaximumTileSize);
+        Changed(nameof(Appearance));
         Changed(nameof(GalleryView));
         Changed(nameof(GalleryViewIndex));
         Changed(nameof(TileSize));
@@ -177,7 +179,13 @@ internal sealed class MainViewModel : INotifyPropertyChanged
             TrySave(settings with { TileSize = size });
     }
 
-    public async Task ReloadAsync()
+    public void ChangeAppearance(AppearanceTheme appearance)
+    {
+        if (Appearance != appearance && TrySave(settings with { Appearance = appearance }))
+            Changed(nameof(Appearance));
+    }
+
+    public async Task ReloadAsync(bool keepGallery = false)
     {
         currentLoad?.Cancel();
         using var load = new CancellationTokenSource();
@@ -188,13 +196,15 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         string? selectedPath = selectedCheckpoint?.RelativePath;
 
         Groups = [];
-        allImages = [];
+        if (!keepGallery)
+            allImages = [];
         Roots = project?.Roots.Select(root => new RootStatus(root, root.Enabled ? "確認中…" : "無効・接続未確認")).ToArray() ?? [];
         CollisionReport = "";
         scanWarnings = [];
         IsLoading = project is not null;
         NotifyScan();
-        UpdateGallery();
+        if (!keepGallery)
+            UpdateGallery();
 
         try
         {
@@ -214,7 +224,8 @@ internal sealed class MainViewModel : INotifyPropertyChanged
                 TrySave(settings with { HeldLabels = heldLabels });
 
             NotifyScan();
-            UpdateGallery();
+            if (!keepGallery)
+                UpdateGallery();
 
             var scan = await Task.Run(() => CatalogService.ReadImages(project, catalog, heldLabels, token), token);
             token.ThrowIfCancellationRequested();
@@ -287,6 +298,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         Images = showingUnresolved ? allImages.Where(item => item.Problem is not null).ToArray() :
             selectedCheckpoint is { } checkpoint ? allImages.Where(item => item.CheckpointPath == checkpoint.RelativePath).ToArray() : [];
         Changed(nameof(Images));
+        Changed(nameof(SelectedCheckpoint));
         Changed(nameof(GalleryTitle));
         Changed(nameof(GalleryContext));
         Changed(nameof(IsGalleryEmpty));

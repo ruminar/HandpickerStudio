@@ -1,0 +1,79 @@
+<UserControl x:Class="HandpickerStudio.CheckpointPane"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Focusable="False">
+    <Grid>
+        <StackPanel>
+            <ToggleButton x:Name="HeaderButton" Height="28" Padding="7,0"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                          Foreground="{DynamicResource TextBrush}" Background="{DynamicResource CanvasBrush}">
+                <ToggleButton.Template>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="HeaderSurface" Background="{TemplateBinding Background}"
+                                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="HeaderSurface" Property="Background" Value="{DynamicResource SelectionFillBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </ToggleButton.Template>
+                <DockPanel>
+                    <TextBlock x:Name="CountText" DockPanel.Dock="Right" Foreground="{DynamicResource SecondaryTextBrush}"
+                               Margin="8,0,0,0" />
+                    <TextBlock DockPanel.Dock="Left" Width="17" FontSize="12" VerticalAlignment="Center">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Text" Value="▸" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsChecked, ElementName=HeaderButton}" Value="True">
+                                        <Setter Property="Text" Value="▾" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock x:Name="RatingText" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                </DockPanel>
+            </ToggleButton>
+            <ListBox x:Name="CheckpointList" Visibility="Collapsed" BorderThickness="0"
+                     Foreground="{DynamicResource TextBrush}" Background="{DynamicResource PanelBrush}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding RelativePath}" ToolTip="{Binding FullPath}" TextTrimming="CharacterEllipsis" />
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                        <Setter Property="MinHeight" Value="24" />
+                        <Setter Property="Padding" Value="7,1" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    </Style>
+                </ListBox.ItemContainerStyle>
+            </ListBox>
+            <Thumb x:Name="ResizeGrip" Height="6" Cursor="SizeNS" ToolTip="ドラッグでペインの高さを変更"
+                   Visibility="Collapsed">
+                <Thumb.Template>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border x:Name="GripSurface" Background="{DynamicResource PanelBrush}">
+                            <Border Width="26" Height="2" CornerRadius="1" Background="{DynamicResource BorderBrush}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="GripSurface" Property="Background" Value="{DynamicResource SelectionFillBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Thumb.Template>
+            </Thumb>
+        </StackPanel>
+        <Border x:Name="DropFrame" BorderBrush="{DynamicResource SelectionBrush}" BorderThickness="2"
+                Visibility="Collapsed" IsHitTestVisible="False" />
+    </Grid>
+</UserControl>

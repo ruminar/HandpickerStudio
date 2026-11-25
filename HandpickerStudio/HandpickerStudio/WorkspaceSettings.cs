@@ -11,8 +11,11 @@ internal sealed record HeldLabel(string OutputPath, string Label);
 
 internal enum GalleryLayout { List, Tiles, SimpleTiles }
 
+internal enum AppearanceTheme { Light, Dark }
+
 internal sealed record WorkspaceSettings(int Version, Project[] Projects, Guid? SelectedProjectId, HeldLabel[] HeldLabels,
-    bool UseTileView = false, GalleryLayout? Layout = null, int TileSize = WorkspaceSettings.DefaultTileSize)
+    bool UseTileView = false, GalleryLayout? Layout = null, int TileSize = WorkspaceSettings.DefaultTileSize,
+    AppearanceTheme Appearance = AppearanceTheme.Light)
 {
     public const int DefaultTileSize = 174;
     public const int MinimumTileSize = 96;

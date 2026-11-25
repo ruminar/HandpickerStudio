@@ -16,6 +16,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = viewModel;
+        viewModel.PropertyChanged += ViewModelChanged;
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -31,6 +32,13 @@ public partial class MainWindow : Window
     private async void AddProject(object sender, RoutedEventArgs e) => await EditProjectAsync(null);
 
     private async void EditProject(object sender, RoutedEventArgs e) => await EditProjectAsync(viewModel.SelectedProject);
+
+    private void EditAppearance(object sender, RoutedEventArgs e)
+    {
+        var editor = new AppearanceSettingsWindow(viewModel.Appearance) { Owner = this };
+        if (editor.ShowDialog() == true)
+            viewModel.ChangeAppearance(editor.Appearance);
+    }
 
     private async void EditRoots(object sender, RoutedEventArgs e) => await EditProjectAsync(viewModel.SelectedProject, showRoots: true);
 
@@ -62,10 +70,25 @@ public partial class MainWindow : Window
         if (sender is not ComboBox { SelectedIndex: >= 0 } picker)
             return;
 
+        var layout = (GalleryLayout)picker.SelectedIndex;
+        if (layout == viewModel.GalleryView)
+            return;
+
         tileWheelRemainder = 0;
-        viewModel.ChangeGalleryView((GalleryLayout)picker.SelectedIndex);
-        if (Gallery?.SelectedItem is ImageEntry selected)
-            Gallery.ScrollIntoView(selected);
+        var selection = Gallery.SelectedItems.Cast<ImageEntry>().ToArray();
+        viewModel.ChangeGalleryView(layout);
+        if (selection.Length == 0)
+            return;
+
+        // Apply the new panel before restoring any selection lost when its containers were replaced.
+        Gallery.UpdateLayout();
+        if (!selection.SequenceEqual(Gallery.SelectedItems.Cast<ImageEntry>()))
+        {
+            Gallery.SelectedItems.Clear();
+            foreach (var image in selection)
+                Gallery.SelectedItems.Add(image);
+        }
+        Gallery.ScrollIntoView(selection[0]);
     }
 
     private void ResizeTilesWithWheel(object sender, MouseWheelEventArgs e)
@@ -85,33 +108,7 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private void SelectCheckpoint(object sender, RoutedPropertyChangedEventArgs<object> e)
-    {
-        if (e.NewValue is Checkpoint checkpoint)
-            viewModel.SelectCheckpoint(checkpoint);
-    }
-
-    private void ShowUnresolved(object sender, RoutedEventArgs e)
-    {
-        if (CheckpointTree.SelectedItem is { } selection && FindTreeItem(CheckpointTree, selection) is { } container)
-            container.IsSelected = false;
-        viewModel.ShowUnresolved();
-    }
-
-    private static TreeViewItem? FindTreeItem(ItemsControl control, object selection)
-    {
-        if (control.ItemContainerGenerator.ContainerFromItem(selection) is TreeViewItem selected)
-            return selected;
-
-        foreach (object item in control.Items)
-        {
-            if (control.ItemContainerGenerator.ContainerFromItem(item) is TreeViewItem child &&
-                FindTreeItem(child, selection) is { } nested)
-                return nested;
-        }
-
-        return null;
-    }
+    private void ShowUnresolved(object sender, RoutedEventArgs e) => viewModel.ShowUnresolved();
 
     private void OpenImage(object sender, MouseButtonEventArgs e)
     {

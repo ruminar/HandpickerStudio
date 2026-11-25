@@ -4,7 +4,6 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 
 namespace HandpickerStudio;
 
@@ -95,7 +94,8 @@ public partial class MainWindow
 
     private void CheckpointMenuTarget(object sender, MouseButtonEventArgs e)
     {
-        if (FindTreeContainer(e.OriginalSource) is { } item)
+        if (FindCheckpointPane(e.OriginalSource) is { } pane && e.OriginalSource is DependencyObject source &&
+            ItemsControl.ContainerFromElement(pane.CheckpointList, source) is ListBoxItem item)
             item.IsSelected = true;
     }
 
@@ -107,7 +107,7 @@ public partial class MainWindow
             return;
         }
 
-        var checkpoint = CheckpointTree.SelectedItem as Checkpoint;
+        var checkpoint = viewModel.SelectedCheckpoint;
         RatingMenu.Items.Clear();
         RatingMenu.IsEnabled = checkpoint is not null;
         DisposeMenu.IsEnabled = checkpoint is not null && viewModel.Groups.Any(group =>
@@ -126,8 +126,10 @@ public partial class MainWindow
 
     private void BeginCheckpointDrag(object sender, MouseButtonEventArgs e)
     {
-        checkpointDragOrigin = e.GetPosition(CheckpointTree);
-        draggedCheckpoint = FindTreeContainer(e.OriginalSource)?.DataContext as Checkpoint;
+        checkpointDragOrigin = e.GetPosition(CheckpointPanes);
+        draggedCheckpoint = FindCheckpointPane(e.OriginalSource) is { } pane && e.OriginalSource is DependencyObject source &&
+            ItemsControl.ContainerFromElement(pane.CheckpointList, source) is ListBoxItem { DataContext: Checkpoint checkpoint }
+            ? checkpoint : null;
     }
 
     private void TrackCheckpointDrag(object sender, MouseEventArgs e)
@@ -135,56 +137,50 @@ public partial class MainWindow
         if (draggedCheckpoint is not { } checkpoint || e.LeftButton != MouseButtonState.Pressed || operationRunning || viewModel.IsLoading)
             return;
 
-        Point position = e.GetPosition(CheckpointTree);
+        Point position = e.GetPosition(CheckpointPanes);
         if (Math.Abs(position.X - checkpointDragOrigin.X) < SystemParameters.MinimumHorizontalDragDistance &&
             Math.Abs(position.Y - checkpointDragOrigin.Y) < SystemParameters.MinimumVerticalDragDistance)
             return;
 
         draggedCheckpoint = null;
-        DragDrop.DoDragDrop(CheckpointTree, new DataObject(CheckpointDragFormat, checkpoint), DragDropEffects.Move);
+        try { DragDrop.DoDragDrop(CheckpointPanes, new DataObject(CheckpointDragFormat, checkpoint), DragDropEffects.Move); }
+        finally { HighlightDropPane(null); }
     }
 
     private void CheckpointDragOver(object sender, DragEventArgs e)
     {
-        e.Effects = FindRating(e.OriginalSource) is not null && e.Data.GetDataPresent(CheckpointDragFormat)
-            ? DragDropEffects.Move : DragDropEffects.None;
+        var target = CheckpointDropTarget(e);
+        HighlightDropPane(target);
+        e.Effects = target is not null ? DragDropEffects.Move : DragDropEffects.None;
         e.Handled = true;
     }
+
+    private void CheckpointDragLeave(object sender, DragEventArgs e) => HighlightDropPane(null);
 
     private async void DropCheckpoint(object sender, DragEventArgs e)
     {
+        HighlightDropPane(null);
         e.Handled = true;
-        if (FindRating(e.OriginalSource) is { } rating && e.Data.GetData(CheckpointDragFormat) is Checkpoint checkpoint)
-            await ChangeRating(checkpoint, rating);
+        var target = CheckpointDropTarget(e);
+        e.Effects = target is not null ? DragDropEffects.Move : DragDropEffects.None;
+        if (target is not null && e.Data.GetData(CheckpointDragFormat) is Checkpoint checkpoint &&
+            !target.CheckpointList.Items.Contains(checkpoint))
+            await ChangeRating(checkpoint, target.Rating);
     }
 
-    private Rating? FindRating(object source) => FindTreeContainer(source)?.DataContext switch
-    {
-        CheckpointGroup { Rating: not Rating.Unavailable } group => group.Rating,
-        Checkpoint checkpoint => viewModel.Groups.FirstOrDefault(group => group.Rating != Rating.Unavailable && group.Items.Contains(checkpoint))?.Rating,
-        _ => null
-    };
-
-    private static TreeViewItem? FindTreeContainer(object source)
-    {
-        for (var element = source as DependencyObject; element is not null;)
-        {
-            if (element is TreeViewItem item)
-                return item;
-            element = element is Visual ? VisualTreeHelper.GetParent(element) : LogicalTreeHelper.GetParent(element);
-        }
-        return null;
-    }
+    private CheckpointPane? CheckpointDropTarget(DragEventArgs e) =>
+        !operationRunning && !viewModel.IsLoading && e.Data.GetDataPresent(CheckpointDragFormat) &&
+        FindCheckpointPane(e.OriginalSource) is { Rating: not Rating.Unavailable } pane ? pane : null;
 
     private Task ChangeRating(Checkpoint checkpoint, Rating rating) => RunOperation("評価を変更", () =>
     {
         using var suite = new SuiteEvaluation(checkpoint.Project);
         return suite.ChangeRating(checkpoint, rating);
-    });
+    }, keepGallery: true);
 
     private async void DisposeCheckpoint(object sender, RoutedEventArgs e)
     {
-        if (CheckpointTree.SelectedItem is not Checkpoint checkpoint || operationRunning || viewModel.IsLoading)
+        if (viewModel.SelectedCheckpoint is not { } checkpoint || operationRunning || viewModel.IsLoading)
             return;
 
         FileStamp stamp;
@@ -214,7 +210,7 @@ public partial class MainWindow
             await RunOperation("廃棄後処理を再開", () => CheckpointDisposal.Resume(project));
     }
 
-    private async Task RunOperation(string title, Func<string?> action, bool shell = false)
+    private async Task RunOperation(string title, Func<string?> action, bool shell = false, bool keepGallery = false)
     {
         if (operationRunning || viewModel.IsLoading)
             return;
@@ -235,6 +231,6 @@ public partial class MainWindow
 
         if (notice is not null)
             ShowReport(title, notice);
-        await viewModel.ReloadAsync();
+        await viewModel.ReloadAsync(keepGallery);
     }
 }

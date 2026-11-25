@@ -1,18 +1,18 @@
 <Window x:Class="HandpickerStudio.ProjectEditorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="プロジェクト設定" Width="840" Height="490" MinWidth="650" MinHeight="365"
+        Style="{StaticResource StudioWindowStyle}" Title="プロジェクト設定" Width="840" Height="490" MinWidth="650" MinHeight="365"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
     <DockPanel Margin="16">
         <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
-            <TextBlock x:Name="ErrorText" Foreground="#9D2E19" TextWrapping="Wrap" Margin="0,0,0,5" />
+            <TextBlock x:Name="ErrorText" Foreground="{DynamicResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,5" />
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Content="キャンセル" IsCancel="True" Margin="0,0,8,0" />
                 <Button Content="保存" IsDefault="True" Click="Save" MinWidth="74" />
             </StackPanel>
         </StackPanel>
 
-        <TabControl x:Name="EditorTabs" Background="{StaticResource PanelBrush}">
+        <TabControl x:Name="EditorTabs" Background="{DynamicResource PanelBrush}">
             <TabItem Header="基本設定">
                 <StackPanel Margin="14">
                     <Label Content="プロジェクト名" Target="{Binding ElementName=NameInput}" />
