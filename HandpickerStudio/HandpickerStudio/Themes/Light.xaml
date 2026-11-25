@@ -8,6 +8,5 @@
     <SolidColorBrush x:Key="WarningBrush" Color="#864900" />
     <SolidColorBrush x:Key="ErrorBrush" Color="#9D2E19" />
     <SolidColorBrush x:Key="SelectionBrush" Color="#1767BE" />
-    <SolidColorBrush x:Key="SelectionTextBrush" Color="#FFFFFF" />
     <SolidColorBrush x:Key="SelectionFillBrush" Color="#E2EFFF" />
 </ResourceDictionary>

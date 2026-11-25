@@ -16,7 +16,7 @@
                         <local:ImagePreview FilePath="{Binding FullPath}" DecodeLimit="280" Stretch="Uniform"
                                             Cache="{Binding DataContext.GalleryCache, RelativeSource={RelativeSource AncestorType=Window}}" />
                     </Border>
-                    <StackPanel Grid.Column="1" Margin="12,0,30,0" VerticalAlignment="Center">
+                    <StackPanel Grid.Column="1" Margin="12,0,47,0" VerticalAlignment="Center">
                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                         <TextBlock Text="{Binding Location}" Foreground="{DynamicResource SecondaryTextBrush}" />
                         <TextBlock Text="{Binding FullPath}" ToolTip="{Binding FullPath}" TextTrimming="CharacterEllipsis" />
@@ -224,16 +224,14 @@
                                                     <Grid>
                                                         <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                                                           VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
-                                                        <Border x:Name="SelectionMark" Width="23" Height="23" Margin="6"
-                                                                HorizontalAlignment="Right" VerticalAlignment="Top"
-                                                                Background="{DynamicResource SelectionBrush}"
-                                                                BorderBrush="{DynamicResource SelectionTextBrush}"
-                                                                BorderThickness="1" CornerRadius="12" Visibility="Collapsed"
-                                                                IsHitTestVisible="False">
-                                                            <Path Data="M 0,5 L 4,9 L 11,1" StrokeThickness="2" StrokeLineJoin="Round"
-                                                                  Stroke="{DynamicResource SelectionTextBrush}"
-                                                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                        </Border>
+                                                        <Grid x:Name="SelectionMark" Width="44" Height="44"
+                                                              HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                              Visibility="Collapsed" IsHitTestVisible="False">
+                                                            <Path Data="M 1,1 L 26,1 43,18 43,43 Z"
+                                                                  Fill="#C61F3A" Stroke="White" StrokeThickness="1.25" StrokeLineJoin="Round" />
+                                                            <Path Data="M 20,14 L 25,19 32,12" Stroke="White" StrokeThickness="2.5"
+                                                                  StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                                                        </Grid>
                                                     </Grid>
                                                 </Border>
                                                 <ControlTemplate.Triggers>

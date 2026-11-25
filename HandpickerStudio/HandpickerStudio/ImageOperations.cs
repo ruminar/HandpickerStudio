@@ -10,6 +10,9 @@ internal sealed record ImageTarget(ImageEntry Image, string RootPath, FileStamp 
 
 internal static class ImageOperations
 {
+    private static readonly string[] ThumbnailExtensions = [".jpeg", ".jpg", ".png", ".webp"];
+    private static readonly string[] ThumbnailSuffixes = [".thumbnail", ".thumb", ".preview"];
+
     public static ImageTarget Capture(Project project, ImageEntry image)
     {
         var root = project.Roots.SingleOrDefault(item => item.Id == image.Root.Id && item.Enabled) ??
@@ -93,6 +96,45 @@ internal static class ImageOperations
             return destination;
         }
         finally { RemoveTemporary(temporary); }
+    }
+
+    public static BitmapSource? ReadThumbnail(Checkpoint checkpoint, CancellationToken token)
+    {
+        if (checkpoint.SharedRelativePath)
+            return null;
+
+        foreach (string candidate in ThumbnailCandidates(checkpoint.FullPath))
+        {
+            token.ThrowIfCancellationRequested();
+            if (!File.Exists(candidate))
+                continue;
+
+            try
+            {
+                using var file = VerifiedFile.Open(candidate, checkpoint.RootPath);
+                using var input = file.OpenStream();
+                return ImagePreview.Decode(input, 320);
+            }
+            catch (Exception error) when (MainWindow.IsOperationError(error)) { }
+        }
+        return null;
+    }
+
+    private static IEnumerable<string> ThumbnailCandidates(string modelPath)
+    {
+        string stem = Path.ChangeExtension(modelPath, null);
+        yield return stem + ".jpg";
+        foreach (string extension in ThumbnailExtensions)
+        {
+            if (extension != ".jpg")
+                yield return stem + extension;
+            yield return modelPath + extension;
+            foreach (string prefix in new[] { stem, modelPath })
+            {
+                foreach (string suffix in ThumbnailSuffixes)
+                    yield return prefix + suffix + extension;
+            }
+        }
     }
 
     public static IEnumerable<string> FindArchiveFolders(Checkpoint checkpoint, ImageRoot root)

@@ -46,7 +46,29 @@
                      VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <TextBlock Text="{Binding RelativePath}" ToolTip="{Binding FullPath}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding RelativePath}" TextTrimming="CharacterEllipsis" Background="Transparent"
+                                   ToolTipService.InitialShowDelay="450" ToolTipService.Placement="Right">
+                            <TextBlock.ToolTip>
+                                <ToolTip Opened="OpenCheckpointPreview" Closed="CloseCheckpointPreview">
+                                    <StackPanel MaxWidth="320">
+                                        <Image MaxWidth="320" MaxHeight="320" Stretch="Uniform" StretchDirection="DownOnly"
+                                               Margin="0,0,0,6">
+                                            <Image.Style>
+                                                <Style TargetType="Image">
+                                                    <Style.Triggers>
+                                                        <Trigger Property="Source" Value="{x:Null}">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </Trigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Image.Style>
+                                        </Image>
+                                        <TextBlock Text="{Binding PlacementTarget.DataContext.FullPath, RelativeSource={RelativeSource AncestorType=ToolTip}}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </ToolTip>
+                            </TextBlock.ToolTip>
+                        </TextBlock>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
                 <ListBox.ItemContainerStyle>
