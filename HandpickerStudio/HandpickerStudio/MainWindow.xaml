@@ -202,6 +202,7 @@
                                     <MenuItem x:Name="RecycleImagesMenu" Header="ごみ箱へ移動" InputGestureText="Delete" Click="RecycleSelectedImages" />
                                     <MenuItem x:Name="MoveImagesMenu" Header="プロジェクト・Checkpointへ移動…" Click="MoveSelectedImages" />
                                     <MenuItem x:Name="ThumbnailMenu" Header="代表サムネイルに設定" Click="SetSelectedThumbnail" />
+                                    <MenuItem x:Name="ReleaseLegacyHoldsMenu" Header="旧版の保留を解除…" Click="ReleaseLegacyHolds" Visibility="Collapsed" />
                                 </ContextMenu>
                             </ListBox.ContextMenu>
                             <ListBox.Style>

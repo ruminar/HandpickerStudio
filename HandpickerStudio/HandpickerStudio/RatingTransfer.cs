@@ -159,6 +159,7 @@ internal static class RatingTransfer
         var byPath = models.ToLookup(item => item.Model.RelativePath, StringComparer.OrdinalIgnoreCase);
         using var suite = new SuiteEvaluation(project);
         var accepted = new List<RatingImportChange>();
+        List<string> rejected = [];
         foreach (var change in plan.Changes)
         {
             var checkpoint = change.Checkpoint;
@@ -173,16 +174,21 @@ internal static class RatingTransfer
             try
             {
                 suite.RequireIdle(checkpoint.RelativePath);
-                if (suite.VerifyCheckpoint(checkpoint) == change.Stamp)
-                    accepted.Add(change);
+                if (suite.VerifyCheckpoint(checkpoint) != change.Stamp)
+                    continue;
+                suite.RequireSafeRating(checkpoint.RelativePath, change.After);
+                accepted.Add(change);
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+            catch (Exception error) when (MainWindow.IsOperationError(error))
+            {
+                rejected.Add($"{checkpoint.RelativePath} {error.Message}");
+            }
         }
         string? notice = suite.SaveImportedRatings(accepted, plan.Deleted, out int historyAdded);
         string result = $"適用 {accepted.Count} 件 / 変更なし {plan.Unchanged} 件 / 一致なし {plan.Missing} 件 / " +
             $"複数一致・競合 {plan.Ambiguous} 件 / スキップ {plan.Skipped + plan.Changes.Length - accepted.Count} 件" +
             (plan.Deleted.Length == 0 ? "" : $"{Environment.NewLine}廃棄履歴に追加 {historyAdded} 件");
-        return notice is null ? result : $"{result}{Environment.NewLine}{notice}";
+        return string.Join(Environment.NewLine, new[] { result, notice }.OfType<string>().Concat(rejected));
     }
 
     private static ((string Name, long Size) Identity, Checkpoint Model)[] ReadModels(Project project)

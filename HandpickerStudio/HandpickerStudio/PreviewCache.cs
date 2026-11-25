@@ -12,6 +12,8 @@ public sealed partial class PreviewCache
 {
     private const string CacheNamespace = "HandpickerStudio-previews-v1";
     private const string OwnerFile = ".handpickerstudio-owner";
+    private const int LegacyListDecodeLimit = 280;
+    private const int LegacyTileDecodeLimit = 420;
     private readonly string root;
     private readonly Guid project;
     private readonly Guid owner;
@@ -26,9 +28,10 @@ public sealed partial class PreviewCache
     internal BitmapSource Decode(string original, int limit, CancellationToken token)
     {
         var version = ImageVersion.Read(original);
-        string key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-            $"{original.ToUpperInvariant()}\n{version.Length}\n{version.Created}\n{version.Modified}\n{limit}")));
-        var cached = stopped ? null : FindPreview(key);
+        string versionKey = VersionKey(original, version, limit);
+        // The path prefix lets cleanup find all versions and sizes of a removed image.
+        string key = $"{PathKey(original)}-{versionKey}";
+        var cached = stopped ? null : FindPreview(key) ?? FindPreview(versionKey);
         if (cached is not null)
             return cached;
 
@@ -36,6 +39,104 @@ public sealed partial class PreviewCache
         if (!stopped && !token.IsCancellationRequested)
             TryStore(original, version, key, bitmap, token);
         return bitmap;
+    }
+
+    private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+
+    private static string PathKey(string path) => Hash(path.ToUpperInvariant());
+
+    private static string VersionKey(string path, ImageVersion version, int limit) =>
+        Hash($"{path.ToUpperInvariant()}\n{version.Length}\n{version.Created}\n{version.Modified}\n{limit}");
+
+    internal sealed class RemovalBatch(PreviewCache cache)
+    {
+        private readonly List<RemovedSource> removed = [];
+        private readonly List<string> problems = [];
+
+        internal void AfterRemoving(string path, Action remove)
+        {
+            var original = Capture(path);
+            remove();
+            removed.Add(original);
+        }
+
+        internal void MoveArchiveFolder(string source, string destination)
+        {
+            List<string> scanProblems = [];
+            var originals = CatalogService.EnumerateFiles(source, scanProblems.Add, CancellationToken.None)
+                .Where(CatalogService.IsImage).Select(Capture).ToArray();
+            Directory.Move(source, destination);
+            removed.AddRange(originals);
+            problems.AddRange(scanProblems);
+        }
+
+        internal string? Complete()
+        {
+            try
+            {
+                if (removed.Count != 0)
+                    cache.RemoveObsolete(removed, problems);
+            }
+            catch (Exception error) when (IsCacheError(error)) { problems.Add(error.Message); }
+
+            return problems.Count == 0 ? null : "画像キャッシュの清掃を完了できませんでした。" + Environment.NewLine +
+                string.Join(Environment.NewLine, problems.Distinct());
+        }
+
+        private static RemovedSource Capture(string path)
+        {
+            try { return new(path, ImageVersion.Read(path)); }
+            catch (Exception error) when (IsCacheError(error)) { return new(path, null); }
+        }
+    }
+
+    private void RemoveObsolete(IEnumerable<RemovedSource> removed, List<string> problems)
+    {
+        using var mutex = new Mutex(false, MutexName(owner));
+        Enter(mutex);
+        try
+        {
+            if (OwnerDirectory(root, owner, create: false) is not { } owned)
+                return;
+            string directory = Path.Combine(owned, project.ToString("N"));
+            if (!IsRegular(directory, directory: true))
+                return;
+
+            var obsoleteKeys = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var source in removed)
+            {
+                try
+                {
+                    if (!IsMissing(source.Path))
+                        continue;
+                    obsoleteKeys.Add(PathKey(source.Path));
+                    if (source.Version is { } version)
+                    {
+                        obsoleteKeys.Add(VersionKey(source.Path, version, LegacyListDecodeLimit));
+                        obsoleteKeys.Add(VersionKey(source.Path, version, LegacyTileDecodeLimit));
+                    }
+                }
+                catch (Exception error) when (IsCacheError(error)) { problems.Add($"{source.Path} {error.Message}"); }
+            }
+            if (obsoleteKeys.Count == 0)
+                return;
+
+            foreach (string file in Directory.EnumerateFiles(directory))
+            {
+                string name = Path.GetFileName(file);
+                if (!GeneratedName().IsMatch(name) || !obsoleteKeys.Contains(name[..64]))
+                    continue;
+                try { DeletePreview(file, directory); }
+                catch (Exception error) when (IsCacheError(error)) { problems.Add($"{file} {error.Message}"); }
+            }
+        }
+        finally { mutex.ReleaseMutex(); }
+    }
+
+    private static bool IsMissing(string path)
+    {
+        try { _ = File.GetAttributes(path); return false; }
+        catch (Exception error) when (error is FileNotFoundException or DirectoryNotFoundException) { return true; }
     }
 
     private BitmapSource? FindPreview(string key)
@@ -116,14 +217,7 @@ public sealed partial class PreviewCache
                         continue;
                     foreach (string file in Directory.EnumerateFiles(directory).Where(file => GeneratedName().IsMatch(Path.GetFileName(file))))
                     {
-                        try
-                        {
-                            if (IsRegular(file, directory: false))
-                            {
-                                using var verified = VerifiedFile.Open(file, directory, forMove: true);
-                                verified.DeleteCacheFile();
-                            }
-                        }
+                        try { DeletePreview(file, directory); }
                         catch (Exception error) when (IsCacheError(error)) { failures.Add(error.Message); }
                     }
                     if (!Directory.EnumerateFileSystemEntries(directory).Any())
@@ -142,6 +236,14 @@ public sealed partial class PreviewCache
             }
         }
         finally { mutex.ReleaseMutex(); }
+    }
+
+    private static void DeletePreview(string file, string directory)
+    {
+        if (!IsRegular(file, directory: false))
+            return;
+        using var verified = VerifiedFile.Open(file, directory, forMove: true);
+        verified.DeleteCacheFile();
     }
 
     private static string? OwnerDirectory(string root, Guid owner, bool create)
@@ -205,8 +307,10 @@ public sealed partial class PreviewCache
     internal static bool IsCacheError(Exception error) => error is IOException or UnauthorizedAccessException or
         JsonException or NotSupportedException or ArgumentException or InvalidOperationException or FileFormatException or COMException;
 
-    [GeneratedRegex(@"\A[0-9A-F]{64}(?:\.png|-[0-9a-f]{32}\.tmp)\z", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\A(?:[0-9A-F]{64}-)?[0-9A-F]{64}(?:\.png|-[0-9a-f]{32}\.tmp)\z", RegexOptions.CultureInvariant)]
     private static partial Regex GeneratedName();
+
+    private readonly record struct RemovedSource(string Path, ImageVersion? Version);
 
     private readonly record struct ImageVersion(long Length, long Created, long Modified)
     {

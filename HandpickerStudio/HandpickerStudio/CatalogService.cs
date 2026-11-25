@@ -27,13 +27,17 @@ internal sealed record RootStatus(ImageRoot Root, string Status)
 }
 
 internal sealed record ImageEntry(string FullPath, string RelativePath, string Location, string? CheckpointPath, string? Problem,
-    ImageRoot Root, bool FromArchive, string[] PossibleOwners)
+    ImageRoot Root, bool FromArchive, string[] PossibleOwners, HeldLabel[]? LegacyHolds = null)
 {
     public string Name => Path.GetFileName(FullPath);
 }
 
 internal sealed record Catalog(Checkpoint[] Checkpoints, CheckpointGroup[] Groups,
-    ILookup<string, Checkpoint> Labels, HeldLabel[] ObservedHolds, string CollisionReport, string[] Warnings, bool IsComplete);
+    ILookup<string, Checkpoint> Labels, HeldLabel[] ObservedHolds, string CollisionReport, string[] Warnings, bool IsComplete,
+    IReadOnlyDictionary<string, string> OutputPaths, string[] UnconfirmedOutputs)
+{
+    public string OutputPath(string path) => OutputPaths.GetValueOrDefault(path, path);
+}
 
 internal sealed record ImageScan(ImageEntry[] Images, RootStatus[] Roots, string[] Warnings);
 
@@ -53,6 +57,8 @@ internal static partial class CatalogService
 
     private static readonly Comparer<string> CheckpointOrder = Comparer<string>.Create(CompareCheckpointPaths);
 
+    internal static bool IsImage(string path) => ImageExtensions.Contains(Path.GetExtension(path));
+
     [GeneratedRegex("[^0-9A-Za-z_-]+", RegexOptions.CultureInvariant)]
     private static partial Regex UnsafeLabelCharacters();
 
@@ -66,20 +72,23 @@ internal static partial class CatalogService
     {
         List<Checkpoint> checkpoints = [];
         List<string> warnings = [];
+        HashSet<Guid> incomplete = [];
         foreach (Project project in projects)
-            checkpoints.AddRange(ReadCheckpoints(project, error => warnings.Add($"{project.Name}のCheckpoint一覧: {error}"), token));
+            checkpoints.AddRange(ReadCheckpoints(project, error =>
+            {
+                incomplete.Add(project.Id);
+                warnings.Add($"{project.Name}のCheckpoint一覧: {error}");
+            }, token));
+
+        var outputPaths = projects.SelectMany(project => project.Roots).Select(root => root.OutputPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToDictionary(path => path, path => ResolveOutputPath(path, token), StringComparer.OrdinalIgnoreCase);
+        var unconfirmedOutputs = projects.Where(project => incomplete.Contains(project.Id)).SelectMany(project => project.Roots)
+            .Select(root => outputPaths[root.OutputPath]).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
         var labels = checkpoints.SelectMany(checkpoint => SaverLabels(checkpoint.SafeName)
                 .Select(label => (Label: label, Checkpoint: checkpoint)))
             .ToLookup(item => item.Label, item => item.Checkpoint, StringComparer.OrdinalIgnoreCase);
-        var collisions = labels.Where(group => group.Skip(1).Any()).OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase).ToArray();
-        var heldLabels = collisions.SelectMany(collision => collision.SelectMany(checkpoint => checkpoint.Project.Roots
-                .SelectMany(root => new[] { new HeldLabel(root.OutputPath, collision.Key), new HeldLabel(root.OutputPath, checkpoint.SafeName) })))
-            .DistinctBy(HoldKey).ToArray();
-        string report = string.Join(Environment.NewLine + Environment.NewLine, collisions.Select(collision =>
-            $"保存ラベル: {collision.Key}{Environment.NewLine}" + string.Join(Environment.NewLine,
-                collision.OrderBy(item => item.Project.Name).ThenBy(item => item.RelativePath)
-                    .Select(item => $"{item.Project.Name} | {item.SafeName} | {item.FullPath}"))));
+        var (heldLabels, report) = FindLabelCollisions(labels, outputPaths, token);
 
         var activeModels = checkpoints.Where(item => item.Project.Id == active.Id).ToArray();
         var duplicates = activeModels.GroupBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase)
@@ -92,7 +101,76 @@ internal static partial class CatalogService
         var byRating = activeCheckpoints.ToLookup(item => ratings?.GetValueOrDefault(item.RelativePath, Rating.None) ?? Rating.Unavailable);
         var groups = RatingGroups.Where(group => group.Rating != Rating.Unavailable || byRating.Contains(Rating.Unavailable))
             .Select(group => new CheckpointGroup(group.Label, byRating[group.Rating].ToArray(), group.Rating)).ToArray();
-        return new(activeCheckpoints, groups, labels, heldLabels, report, warnings.Distinct().ToArray(), isComplete);
+        return new(activeCheckpoints, groups, labels, heldLabels, report, warnings.Distinct().ToArray(), isComplete,
+            outputPaths, unconfirmedOutputs);
+    }
+
+    private static (HeldLabel[] Holds, string Report) FindLabelCollisions(ILookup<string, Checkpoint> labels,
+        IReadOnlyDictionary<string, string> outputPaths, CancellationToken token)
+    {
+        List<HeldLabel> holds = [];
+        List<string> reports = [];
+        foreach (var group in labels.Where(group => group.Skip(1).Any()).OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            token.ThrowIfCancellationRequested();
+            var candidates = group.Distinct().ToArray();
+            var conflicting = new HashSet<Checkpoint>();
+            for (int first = 0; first < candidates.Length; first++)
+            {
+                var left = candidates[first];
+                for (int second = first + 1; second < candidates.Length; second++)
+                {
+                    var right = candidates[second];
+                    var shared = SharedOutputs(left.Project, right.Project, outputPaths).ToArray();
+                    if (shared.Length == 0 && left.Project.Id != right.Project.Id)
+                        continue;
+                    conflicting.Add(left);
+                    conflicting.Add(right);
+                    foreach (string path in shared)
+                    {
+                        holds.Add(new(path, group.Key, Scoped: true));
+                        holds.Add(new(path, left.SafeName, Scoped: true));
+                        holds.Add(new(path, right.SafeName, Scoped: true));
+                    }
+                }
+            }
+            if (conflicting.Count > 0)
+                reports.Add($"保存ラベル: {group.Key}{Environment.NewLine}" + string.Join(Environment.NewLine,
+                    conflicting.OrderBy(item => item.Project.Name).ThenBy(item => item.RelativePath)
+                        .Select(item => $"{item.Project.Name} | {item.SafeName} | {item.FullPath}")));
+        }
+        return (holds.DistinctBy(HoldKey).ToArray(), string.Join(Environment.NewLine + Environment.NewLine, reports));
+    }
+
+    private static IEnumerable<string> SharedOutputs(Project left, Project right, IReadOnlyDictionary<string, string> outputPaths)
+    {
+        foreach (var first in left.Roots)
+        {
+            string firstPath = outputPaths[first.OutputPath];
+            foreach (var second in right.Roots)
+            {
+                string secondPath = outputPaths[second.OutputPath];
+                if (WorkspacePaths.Within(firstPath, secondPath))
+                    yield return firstPath;
+                else if (WorkspacePaths.Within(secondPath, firstPath))
+                    yield return secondPath;
+            }
+        }
+    }
+
+    private static string ResolveOutputPath(string path, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        try
+        {
+            string resolved = ArchiveDirectory.ResolveExistingPath(path);
+            if (resolved.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+                resolved = @"\\" + resolved[8..];
+            else if (resolved.StartsWith(@"\\?\", StringComparison.Ordinal) && resolved.Length > 5 && resolved[5] == ':')
+                resolved = resolved[4..];
+            return Path.TrimEndingDirectorySeparator(resolved);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { return path; }
     }
 
     private static int CompareCheckpointPaths(string left, string right)
@@ -187,8 +265,10 @@ internal static partial class CatalogService
                 continue;
             }
 
-            var held = holds.Where(item => WorkspacePaths.Overlap(item.OutputPath, root.OutputPath))
-                .Select(item => item.Label).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            string outputPath = catalog.OutputPath(root.OutputPath);
+            var held = holds.Where(item => WorkspacePaths.Overlap(catalog.OutputPath(item.OutputPath), outputPath))
+                .ToLookup(item => item.Label, StringComparer.OrdinalIgnoreCase);
+            var unconfirmed = catalog.UnconfirmedOutputs.Where(path => WorkspacePaths.Overlap(path, outputPath)).ToArray();
             int previousWarnings = warnings.Count;
             bool outputAvailable = DirectoryAvailable(root.OutputPath, error => warnings.Add($"{root.Name}のOutput: {error}"));
             ReadArchive(active.Id, root, catalog.Checkpoints, images, warnings, outputAvailable, token);
@@ -196,24 +276,38 @@ internal static partial class CatalogService
             {
                 foreach (string path in EnumerateFiles(root.OutputPath, error => warnings.Add($"{root.Name}のOutput: {error}"), token))
                 {
-                    if (!ImageExtensions.Contains(Path.GetExtension(path)))
+                    if (!IsImage(path))
                         continue;
 
                     string relativePath = RelativePath(root.OutputPath, path);
+                    string physicalPath = Path.Combine(outputPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
                     var labels = MatchingLabels(relativePath, catalog.Labels, held);
-                    var matches = labels.SelectMany(label => catalog.Labels[label]).Distinct().ToArray();
-                    bool isHeld = labels.Overlaps(held);
-                    bool hasUniqueOwner = !isHeld && catalog.IsComplete && matches.Length == 1;
+                    var matches = labels.SelectMany(label => catalog.Labels[label]).Distinct().Where(checkpoint => checkpoint.Project.Roots
+                        .Any(source => WorkspacePaths.Within(physicalPath, catalog.OutputPath(source.OutputPath)))).ToArray();
+                    var imageHolds = labels.SelectMany(label => held[label])
+                        .Where(item => WorkspacePaths.Within(physicalPath, catalog.OutputPath(item.OutputPath))).ToArray();
+                    bool isHeld = imageHolds.Length != 0;
+                    bool isComplete = !unconfirmed.Any(folder => WorkspacePaths.Within(physicalPath, folder));
+                    bool hasUniqueOwner = !isHeld && isComplete && matches.Length == 1;
                     if (hasUniqueOwner && matches[0].Project.Id != active.Id)
                         continue;
 
                     string? owner = hasUniqueOwner ? matches[0].RelativePath : null;
-                    string? reason = owner is not null ? null : isHeld ? "ラベルの重複により保留" :
-                        matches.Length > 1 ? "複数のCheckpointが一致" : !catalog.IsComplete ? "照合対象の一覧が未確認" : "一致するCheckpointなし";
+                    bool onlyLegacy = isHeld && imageHolds.All(item => !item.Scoped);
+                    string? reason = (owner, isHeld, onlyLegacy, matches.Length, isComplete) switch
+                    {
+                        (not null, _, _, _, _) => null,
+                        (_, true, true, _, _) => "旧版のラベル重複記録により保留",
+                        (_, true, _, _, _) => "ラベルの重複により保留",
+                        (_, _, _, > 1, _) => "複数のCheckpointが一致",
+                        (_, _, _, _, false) => "照合対象の一覧が未確認",
+                        _ => "一致するCheckpointなし"
+                    };
                     if (reason is not null && matches.Length > 0)
                         reason += " · " + string.Join("、", matches.Select(item => $"{item.Project.Name}/{item.RelativePath}"));
+                    var legacyHolds = onlyLegacy && isComplete && matches is [var current] && current.Project.Id == active.Id ? imageHolds : null;
                     images.Add(new(path, relativePath, $"{root.Name} / Output", owner, reason, root, false,
-                        matches.Where(item => item.Project.Id == active.Id).Select(item => item.RelativePath).ToArray()));
+                        matches.Where(item => item.Project.Id == active.Id).Select(item => item.RelativePath).ToArray(), legacyHolds));
                 }
             }
             roots.Add(new(root, !outputAvailable ? "Outputに接続できません" :
@@ -265,7 +359,7 @@ internal static partial class CatalogService
         var owners = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         foreach (string path in EnumerateFiles(archive, error => warnings.Add($"{root.Name}のarchive: {error}"), token))
         {
-            if (!ImageExtensions.Contains(Path.GetExtension(path)))
+            if (!IsImage(path))
                 continue;
 
             string relativePath = RelativePath(archive, path);
@@ -288,7 +382,7 @@ internal static partial class CatalogService
         }
     }
 
-    private static HashSet<string> MatchingLabels(string relativePath, ILookup<string, Checkpoint> labels, HashSet<string> held)
+    private static HashSet<string> MatchingLabels(string relativePath, ILookup<string, Checkpoint> labels, ILookup<string, HeldLabel> held)
     {
         var matches = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         string[] parts = relativePath.Split('/');
@@ -371,7 +465,7 @@ internal static partial class CatalogService
     internal static IEnumerable<string> EnumerateCheckpoints(string path, Action<string> warn, CancellationToken token) =>
         EnumerateFiles(path, warn, token).Where(file => Path.GetExtension(file).Equals(".safetensors", StringComparison.OrdinalIgnoreCase));
 
-    private static IEnumerable<string> EnumerateFiles(string path, Action<string> warn, CancellationToken token)
+    internal static IEnumerable<string> EnumerateFiles(string path, Action<string> warn, CancellationToken token)
     {
         var folders = new Stack<string>();
         folders.Push(path);

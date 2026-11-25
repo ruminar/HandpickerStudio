@@ -27,7 +27,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
 
     public Project[] Projects => settings.Projects;
     public Checkpoint? SelectedCheckpoint => selectedCheckpoint;
-    public HeldLabel[] HeldLabels => settings.HeldLabels.Concat(observedHolds).DistinctBy(CatalogService.HoldKey).ToArray();
+    public HeldLabel[] HeldLabels => observedHolds.Concat(settings.HeldLabels).DistinctBy(CatalogService.HoldKey).ToArray();
     public bool CanSave { get; private set; } = true;
     public bool CanEditProject => CanSave && SelectedProject is not null;
     public AppearanceTheme Appearance => Enum.IsDefined(settings.Appearance) ? settings.Appearance : AppearanceTheme.Light;
@@ -163,6 +163,17 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         UpdateGallery();
     }
 
+    internal async Task ReleaseLegacyHoldsAsync(HeldLabel[] holds)
+    {
+        if (IsLoading || !CanSave)
+            return;
+
+        var requested = holds.Select(CatalogService.HoldKey).ToHashSet();
+        var remaining = settings.HeldLabels.Where(hold => hold.Scoped || !requested.Contains(CatalogService.HoldKey(hold))).ToArray();
+        if (remaining.Length != settings.HeldLabels.Length && TrySave(settings with { HeldLabels = remaining }))
+            await ReloadAsync();
+    }
+
     public void ClearCheckpointSelection()
     {
         selectedCheckpoint = null;
@@ -256,8 +267,8 @@ internal sealed class MainViewModel : INotifyPropertyChanged
             scanWarnings = catalog.Warnings;
 
             observedHolds = observedHolds.Concat(catalog.ObservedHolds).DistinctBy(CatalogService.HoldKey).ToArray();
-            var heldLabels = settings.HeldLabels.Concat(observedHolds).DistinctBy(CatalogService.HoldKey).ToArray();
-            if (heldLabels.Length > settings.HeldLabels.Length)
+            var heldLabels = HeldLabels;
+            if (!heldLabels.SequenceEqual(settings.HeldLabels))
                 TrySave(settings with { HeldLabels = heldLabels });
 
             NotifyScan();

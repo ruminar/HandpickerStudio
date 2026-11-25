@@ -149,7 +149,7 @@ public partial class MainWindow : Window
         int index = Array.IndexOf(images, image);
         if (index >= 0 && viewModel.SelectedProject is { } project)
         {
-            var viewer = new ImageViewerWindow(images, index, project, viewModel.SelectedCheckpoint) { Owner = this };
+            var viewer = new ImageViewerWindow(images, index, project, viewModel.SelectedCheckpoint, viewModel.GalleryCache) { Owner = this };
             viewer.ShowDialog();
             if (viewer.ImagesChanged)
                 await viewModel.ReloadAsync();

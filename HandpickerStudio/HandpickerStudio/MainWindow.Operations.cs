@@ -38,6 +38,25 @@ public partial class MainWindow
         RecycleImagesMenu.IsEnabled = images.Any(image => image.CheckpointPath is not null);
         MoveImagesMenu.IsEnabled = viewModel.Projects.Any(project => project.Roots.Any(root => root.Enabled));
         ThumbnailMenu.IsEnabled = images is [{ CheckpointPath: not null }];
+        ReleaseLegacyHoldsMenu.Visibility = viewModel.CanSave && images.Any(image => image.LegacyHolds is { Length: > 0 })
+            ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async void ReleaseLegacyHolds(object sender, RoutedEventArgs e)
+    {
+        var holds = Gallery.SelectedItems.OfType<ImageEntry>().SelectMany(image => image.LegacyHolds ?? [])
+            .DistinctBy(CatalogService.HoldKey).ToArray();
+        if (holds.Length == 0 || viewModel.IsLoading || operationRunning || !viewModel.CanSave)
+            return;
+
+        string details = string.Join(Environment.NewLine, holds.Take(8).Select(hold => $"{hold.Label} | {hold.OutputPath}"));
+        if (holds.Length > 8)
+            details += $"{Environment.NewLine}ほか {holds.Length - 8} 件";
+        if (MessageBox.Show(this, $"旧版の保留を {holds.Length} 件解除します。同じラベルとOutput範囲の画像をまとめて再照合します。" +
+            $"{Environment.NewLine}当時の重複相手は記録されていません。所属を確認できる場合に続けてください。" +
+            $"{Environment.NewLine}{Environment.NewLine}{details}", "旧版の保留を解除", MessageBoxButton.OKCancel,
+            MessageBoxImage.Question, MessageBoxResult.Cancel) == MessageBoxResult.OK)
+            await viewModel.ReleaseLegacyHoldsAsync(holds);
     }
 
     private async void RecycleSelectedImages(object sender, RoutedEventArgs e)
@@ -46,7 +65,11 @@ public partial class MainWindow
             return;
         var images = Gallery.SelectedItems.OfType<ImageEntry>().ToArray();
         if (images.Length != 0)
-            await RunOperation("ごみ箱へ移動", () => ProcessImages(project, images, ImageOperations.Recycle), shell: true);
+        {
+            var cleanup = BeginCacheCleanup();
+            await RunOperation("ごみ箱へ移動", () => ProcessImages(project, images, ImageOperations.Recycle, cleanup),
+                shell: true, cleanup: cleanup);
+        }
     }
 
     private async void MoveSelectedImages(object sender, RoutedEventArgs e)
@@ -59,7 +82,11 @@ public partial class MainWindow
 
         var dialog = new MoveDestinationWindow(viewModel.Projects, project.Id, images.Length) { Owner = this };
         if (dialog.ShowDialog() == true && dialog.Destination is { } destination && dialog.DestinationRoot is { } root)
-            await RunOperation("画像を移動", () => ProcessImages(project, images, image => ImageOperations.Move(image, destination, root)));
+        {
+            var cleanup = BeginCacheCleanup();
+            await RunOperation("画像を移動", () => ProcessImages(project, images, image => ImageOperations.Move(image, destination, root), cleanup),
+                cleanup: cleanup);
+        }
     }
 
     private async void SetSelectedThumbnail(object sender, RoutedEventArgs e)
@@ -72,7 +99,7 @@ public partial class MainWindow
             $"保存しました。{Environment.NewLine}{ImageOperations.SetThumbnail(ImageOperations.Capture(project, image), checkpoint)}");
     }
 
-    private static string? ProcessImages(Project project, ImageEntry[] images, Action<ImageTarget> operation)
+    private static string? ProcessImages(Project project, ImageEntry[] images, Action<ImageTarget> operation, PreviewCache.RemovalBatch? cleanup)
     {
         int completed = 0;
         List<string> problems = [];
@@ -80,7 +107,11 @@ public partial class MainWindow
         {
             try
             {
-                operation(ImageOperations.Capture(project, image));
+                var target = ImageOperations.Capture(project, image);
+                if (cleanup is null)
+                    operation(target);
+                else
+                    cleanup.AfterRemoving(image.FullPath, () => operation(target));
                 completed++;
             }
             catch (Exception error) when (IsOperationError(error))
@@ -250,16 +281,24 @@ public partial class MainWindow
 
         Project[] projects = viewModel.Projects;
         HeldLabel[] holds = viewModel.HeldLabels;
-        await RunOperation("Checkpointを廃棄", () => CheckpointDisposal.Execute(checkpoint, stamp, projects, holds), shell: true);
+        var cleanup = BeginCacheCleanup();
+        await RunOperation("Checkpointを廃棄", () => CheckpointDisposal.Execute(checkpoint, stamp, projects, holds, cleanup),
+            shell: true, cleanup: cleanup);
     }
 
     private async void ResumeDisposal(object sender, RoutedEventArgs e)
     {
         if (viewModel.SelectedProject is { } project)
-            await RunOperation("廃棄後処理を再開", () => CheckpointDisposal.Resume(project));
+        {
+            var cleanup = BeginCacheCleanup();
+            await RunOperation("廃棄後処理を再開", () => CheckpointDisposal.Resume(project, cleanup), cleanup: cleanup);
+        }
     }
 
-    private async Task RunOperation(string title, Func<string?> action, bool shell = false, bool keepGallery = false, bool reload = true)
+    private PreviewCache.RemovalBatch? BeginCacheCleanup() => viewModel.GalleryCache is { } cache ? new(cache) : null;
+
+    private async Task RunOperation(string title, Func<string?> action, bool shell = false, bool keepGallery = false, bool reload = true,
+        PreviewCache.RemovalBatch? cleanup = null)
     {
         if (operationRunning || viewModel.IsLoading)
             return;
@@ -269,9 +308,12 @@ public partial class MainWindow
         IsEnabled = false;
         try
         {
-            notice = shell ? await RecycleBin.RunOnSta(action) : await Task.Run(action);
+            try { notice = shell ? await RecycleBin.RunOnSta(action) : await Task.Run(action); }
+            catch (Exception error) when (IsOperationError(error)) { notice = error.Message; }
+
+            if (cleanup is not null && await Task.Run(cleanup.Complete) is { } warning)
+                notice = notice is null ? warning : notice + Environment.NewLine + Environment.NewLine + warning;
         }
-        catch (Exception error) when (IsOperationError(error)) { notice = error.Message; }
         finally
         {
             operationRunning = false;

@@ -15,7 +15,7 @@ internal sealed record Project(Guid Id, string Name, string CheckpointPath, stri
     public CheckpointFolder[] ModelFolders => CheckpointFolders ?? [new(CheckpointPath)];
 }
 
-internal sealed record HeldLabel(string OutputPath, string Label);
+internal sealed record HeldLabel(string OutputPath, string Label, bool Scoped = false);
 
 internal enum GalleryLayout { List, Tiles, SimpleTiles }
 

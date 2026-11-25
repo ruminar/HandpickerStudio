@@ -15,7 +15,8 @@ internal static class CheckpointDisposal
         return suite.VerifyCheckpoint(checkpoint);
     }
 
-    public static string? Execute(Checkpoint checkpoint, FileStamp expected, Project[] projects, HeldLabel[] holds)
+    public static string? Execute(Checkpoint checkpoint, FileStamp expected, Project[] projects, HeldLabel[] holds,
+        PreviewCache.RemovalBatch? cleanup)
     {
         var project = checkpoint.Project;
         var catalog = CatalogService.ReadCatalog(projects, project, CancellationToken.None);
@@ -24,12 +25,16 @@ internal static class CheckpointDisposal
                 StringComparison.OrdinalIgnoreCase)))
             throw new IOException("このCheckpointの参照範囲を一意に確認できません。");
 
-        var held = holds.Concat(catalog.ObservedHolds).DistinctBy(CatalogService.HoldKey).ToArray();
+        var held = catalog.ObservedHolds.Concat(holds).DistinctBy(CatalogService.HoldKey).ToArray();
         ImageScan scan = ScanForDisposal();
         foreach (var image in scan.Images.Where(IsOutputImage))
         {
             var root = project.Roots.Single(item => item.Id == image.Root.Id);
-            ImageOperations.Move(ImageOperations.Capture(project, image), checkpoint, root);
+            var source = ImageOperations.Capture(project, image);
+            if (cleanup is null)
+                ImageOperations.Move(source, checkpoint, root);
+            else
+                cleanup.AfterRemoving(image.FullPath, () => ImageOperations.Move(source, checkpoint, root));
         }
 
         // A fresh scan covers new outputs from other processes and directories that changed during the moves.
@@ -102,7 +107,7 @@ internal static class CheckpointDisposal
         using (var suite = new SuiteEvaluation(project))
             suite.WriteRecord(record);
         RemoveEmptyStage(directory);
-        return Finish(checkpoint, record);
+        return Finish(checkpoint, record, cleanup);
 
         bool IsOutputImage(ImageEntry image) => !image.FromArchive && image.CheckpointPath == checkpoint.RelativePath;
 
@@ -116,7 +121,7 @@ internal static class CheckpointDisposal
         }
     }
 
-    public static string? Resume(Project project)
+    public static string? Resume(Project project, PreviewCache.RemovalBatch? cleanup)
     {
         DisposalRecord[] pending;
         using (var suite = new SuiteEvaluation(project))
@@ -139,7 +144,7 @@ internal static class CheckpointDisposal
                 continue;
             }
             var checkpoint = new Checkpoint(project, record.Key, record.OriginalPath, CatalogService.SafeName(record.Key));
-            if (Finish(checkpoint, record) is { } warning)
+            if (Finish(checkpoint, record, cleanup) is { } warning)
                 notices.Add(warning);
         }
         return notices.Count == 0 ? null : string.Join(Environment.NewLine, notices);
@@ -188,14 +193,18 @@ internal static class CheckpointDisposal
         return Path.Combine(parent, ".HandpickerStudio-Recycle", operation.ToString("N"));
     }
 
-    private static string? Finish(Checkpoint checkpoint, DisposalRecord record)
+    private static string? Finish(Checkpoint checkpoint, DisposalRecord record, PreviewCache.RemovalBatch? cleanup)
     {
         string? notice;
+        bool reservationCleared;
         using (var suite = new SuiteEvaluation(checkpoint.Project))
-            notice = suite.FinishDisposal(record);
-        ImageOperations.MarkArchive(checkpoint);
-        using (var suite = new SuiteEvaluation(checkpoint.Project))
+            notice = suite.FinishDisposal(record, out reservationCleared);
+        ImageOperations.MarkArchive(checkpoint, cleanup);
+        if (reservationCleared)
+        {
+            using var suite = new SuiteEvaluation(checkpoint.Project);
             suite.RemoveRecord(record);
+        }
         return notice;
     }
 

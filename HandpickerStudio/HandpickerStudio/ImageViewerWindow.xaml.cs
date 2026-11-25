@@ -10,16 +10,18 @@ public partial class ImageViewerWindow : Window
     private readonly List<ImageEntry> images;
     private readonly Project project;
     private readonly Checkpoint? checkpoint;
+    private readonly PreviewCache? galleryCache;
     private int currentIndex;
     private int wheelRemainder;
     private bool operationRunning;
 
-    internal ImageViewerWindow(ImageEntry[] images, int startIndex, Project project, Checkpoint? checkpoint)
+    internal ImageViewerWindow(ImageEntry[] images, int startIndex, Project project, Checkpoint? checkpoint, PreviewCache? galleryCache)
     {
         InitializeComponent();
         this.images = [.. images];
         this.project = project;
         this.checkpoint = checkpoint;
+        this.galleryCache = galleryCache;
         Preview.PreviewLoaded += (_, _) =>
         {
             if (previousPlacement.HasValue && WindowState == WindowState.Normal)
@@ -108,16 +110,25 @@ public partial class ImageViewerWindow : Window
         ImageEntry image = images[removing];
         await RunAsync(async () =>
         {
-            await RecycleBin.RunOnSta(() =>
+            string? warning = await RecycleBin.RunOnSta(() =>
             {
-                ImageOperations.Recycle(ImageOperations.Capture(project, image));
-                return true;
+                var target = ImageOperations.Capture(project, image);
+                if (galleryCache is null)
+                {
+                    ImageOperations.Recycle(target);
+                    return null;
+                }
+                var cleanup = new PreviewCache.RemovalBatch(galleryCache);
+                cleanup.AfterRemoving(image.FullPath, () => ImageOperations.Recycle(target));
+                return cleanup.Complete();
             });
 
             ImagesChanged = true;
             images.RemoveAt(removing);
             if (images.Count > 0)
                 ShowAt(Math.Min(removing, images.Count - 1));
+            if (warning is not null)
+                MessageBox.Show(this, warning, "画像キャッシュ");
         });
         if (images.Count == 0)
             Close();

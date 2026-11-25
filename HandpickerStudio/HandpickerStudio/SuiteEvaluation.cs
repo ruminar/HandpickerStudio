@@ -93,22 +93,19 @@ internal sealed class SuiteEvaluation : IDisposable
     public Rating GetRating(string relativePath) =>
         ParseRating(statuses[relativePath]?["status"]?.GetValue<string>(), out Rating current) ? current : Rating.None;
 
-    public string? ChangeRating(Checkpoint checkpoint, Rating rating)
-        => UpdateCheckpointRating(checkpoint, rating) ? Save() : null;
-
     public string? ChangeRatings(Checkpoint[] checkpoints, Rating rating)
     {
-        if (checkpoints is [var checkpoint])
-            return ChangeRating(checkpoint, rating);
-
         int updated = 0;
         List<string> failures = [];
+        List<string> cancellations = [];
         foreach (var item in checkpoints)
         {
             try
             {
                 if (UpdateCheckpointRating(item, rating))
                     updated++;
+                if (rating != Rating.Delete)
+                    cancellations.Add(item.RelativePath);
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
             {
@@ -116,7 +113,7 @@ internal sealed class SuiteEvaluation : IDisposable
             }
         }
 
-        string? notice = updated > 0 ? Save() : null;
+        string? notice = SaveAndCancelReservations(updated > 0, cancellations, $"studio_status_changed_to_{RatingValue(rating)}");
         if (failures.Count == 0)
             return notice;
         if (notice is not null)
@@ -133,7 +130,7 @@ internal sealed class SuiteEvaluation : IDisposable
         if (GetRating(checkpoint.RelativePath) == rating)
             return false;
 
-        CancelReservation(checkpoint.RelativePath, $"studio_status_changed_to_{RatingValue(rating)}");
+        RequireSafeRating(checkpoint.RelativePath, rating);
         UpdateRating(checkpoint, rating);
         return true;
     }
@@ -143,11 +140,16 @@ internal sealed class SuiteEvaluation : IDisposable
     {
         historyAdded = DeletedCheckpointHistory.Remember(database, projectId, deleted);
         foreach (var match in matches)
-        {
-            CancelReservation(match.Checkpoint.RelativePath, "studio_rating_imported");
             UpdateRating(match.Checkpoint, match.After);
-        }
-        return matches.Count > 0 || historyAdded > 0 ? Save() : null;
+        return SaveAndCancelReservations(matches.Count > 0 || historyAdded > 0,
+            matches.Where(match => match.After != Rating.Delete).Select(match => match.Checkpoint.RelativePath),
+            "studio_rating_imported");
+    }
+
+    internal void RequireSafeRating(string key, Rating rating)
+    {
+        if (rating == Rating.Delete && FindActiveReservation(key) is not null)
+            throw new IOException("旧削除予約が残っています。現在の評価を設定し直して予約を取り消してから、deleteに変更してください。");
     }
 
     private void UpdateRating(Checkpoint checkpoint, Rating rating)
@@ -248,24 +250,27 @@ internal sealed class SuiteEvaluation : IDisposable
 
     public void ValidateDisposalHistory() => DeletedCheckpointHistory.ValidateProject(database, projectId);
 
-    public string? FinishDisposal(DisposalRecord record)
+    public string? FinishDisposal(DisposalRecord record, out bool reservationCleared)
     {
         if (record.Phase != "recycled")
             throw new IOException("ごみ箱への移動結果が確定していません。");
         VerifyRecord(record);
-        CancelReservation(record.Key, "studio_checkpoint_recycled");
         if (record.RememberForTransfer)
             DeletedCheckpointHistory.Remember(database, record.ProjectId, [new(Path.GetFileName(record.OriginalPath), record.Stamp.Length)]);
         if (GetRating(record.Key) == Rating.Delete)
             statuses.Remove(record.Key);
-        return Save();
+        string? notice = Save();
+        string? cancellationError = TryCancelReservation(record.Key, "studio_checkpoint_recycled");
+        reservationCleared = cancellationError is null;
+        return JoinNotices(notice, cancellationError is null ? null :
+            $"廃棄後の評価は保存しました。削除予約の取消は「廃棄後処理を再開」から再試行できます。{Environment.NewLine}{cancellationError}");
     }
 
-    private void CancelReservation(string key, string reason)
+    private string? FindActiveReservation(string key)
     {
         string[] lines;
         try { lines = File.ReadAllLines(queuePath, new UTF8Encoding(false, true)); }
-        catch (FileNotFoundException) { return; }
+        catch (FileNotFoundException) { return null; }
         string? reservationId = null;
         foreach (string line in lines.Where(line => !string.IsNullOrWhiteSpace(line)))
         {
@@ -282,15 +287,38 @@ internal sealed class SuiteEvaluation : IDisposable
                 (string.IsNullOrWhiteSpace(relpath) || string.Equals(relpath, key, StringComparison.OrdinalIgnoreCase)))
                 reservationId = null;
         }
-        if (reservationId is null)
-            return;
-
-        var cancel = new { version = 1, type = "cancel", id = reservationId, ckpt_name_str = key,
-            cancelled_at = DateTimeOffset.Now.ToString("yyyy-MM-dd'T'HH:mm:sszzz"), reason };
-        using var stream = new FileStream(queuePath, FileMode.Append, FileAccess.Write, FileShare.Read);
-        stream.Write(Encoding.UTF8.GetBytes("\n" + JsonSerializer.Serialize(cancel) + "\n"));
-        stream.Flush(flushToDisk: true);
+        return reservationId;
     }
+
+    private string? TryCancelReservation(string key, string reason)
+    {
+        try
+        {
+            if (FindActiveReservation(key) is not { } reservationId)
+                return null;
+            var cancel = new { version = 1, type = "cancel", id = reservationId, ckpt_name_str = key,
+                cancelled_at = DateTimeOffset.Now.ToString("yyyy-MM-dd'T'HH:mm:sszzz"), reason };
+            using var stream = new FileStream(queuePath, FileMode.Append, FileAccess.Write, FileShare.Read);
+            stream.Write(Encoding.UTF8.GetBytes("\n" + JsonSerializer.Serialize(cancel) + "\n"));
+            stream.Flush(flushToDisk: true);
+            return null;
+        }
+        catch (Exception error) when (MainWindow.IsOperationError(error)) { return $"{key} {error.Message}"; }
+    }
+
+    private string? SaveAndCancelReservations(bool save, IEnumerable<string> keys, string reason)
+    {
+        string? notice = save ? Save() : null;
+        var errors = keys.Select(key => TryCancelReservation(key, reason)).OfType<string>().ToArray();
+        if (errors.Length == 0)
+            return notice;
+
+        string heading = save ? "評価は保存しました。削除予約の取消を完了できませんでした。" : "削除予約の取消を完了できませんでした。";
+        return JoinNotices(notice, heading + Environment.NewLine + string.Join(Environment.NewLine, errors));
+    }
+
+    private static string? JoinNotices(string? first, string? second) => first is null ? second :
+        second is null ? first : first + Environment.NewLine + second;
 
     private string? Save()
     {
@@ -310,7 +338,7 @@ internal sealed class SuiteEvaluation : IDisposable
                 new JsonObject { ["version"] = 1, ["favorites"] = favorite });
             return null;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (MainWindow.IsOperationError(exception))
         {
             return $"評価JSONは保存しました。favorite互換データの再生成が必要です。{exception.Message}";
         }

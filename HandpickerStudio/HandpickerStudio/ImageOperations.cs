@@ -248,7 +248,7 @@ internal static class ImageOperations
         }
     }
 
-    public static void MarkArchive(Checkpoint checkpoint)
+    public static void MarkArchive(Checkpoint checkpoint, PreviewCache.RemovalBatch? cleanup)
     {
         foreach (var root in checkpoint.Project.Roots.Where(root => root.Enabled))
         {
@@ -257,7 +257,10 @@ internal static class ImageOperations
                 string destination = Path.Combine(Path.GetDirectoryName(folder)!, "★" + Path.GetFileName(folder));
                 if (Path.Exists(destination))
                     destination += "-" + Guid.NewGuid().ToString("N")[..8];
-                Directory.Move(folder, destination);
+                if (cleanup is null)
+                    Directory.Move(folder, destination);
+                else
+                    cleanup.MoveArchiveFolder(folder, destination);
             }
         }
     }
