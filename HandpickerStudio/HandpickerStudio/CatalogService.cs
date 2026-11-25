@@ -43,6 +43,8 @@ internal static partial class CatalogService
         ".png", ".jpg", ".jpeg", ".webp"
     };
 
+    private static readonly Comparer<string> CheckpointOrder = Comparer<string>.Create(CompareCheckpointPaths);
+
     [GeneratedRegex("[^0-9A-Za-z_-]+", RegexOptions.CultureInvariant)]
     private static partial Regex UnsafeLabelCharacters();
 
@@ -82,13 +84,30 @@ internal static partial class CatalogService
                     .Select(item => $"{item.Project.Name} | {item.SafeName} | {item.FullPath}"))));
 
         var activeCheckpoints = checkpoints.Where(item => item.Project.Id == active.Id)
-            .OrderBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase).ToArray();
+            .OrderBy(item => item.RelativePath, CheckpointOrder).ToArray();
         bool isComplete = warnings.Count == 0;
         var ratings = ReadRatings(active.EvaluationPath, warnings);
         var byRating = activeCheckpoints.ToLookup(item => ratings?.GetValueOrDefault(item.RelativePath, Rating.None) ?? Rating.Unavailable);
         var groups = RatingGroups.Where(group => group.Rating != Rating.Unavailable || byRating.Contains(Rating.Unavailable))
             .Select(group => new CheckpointGroup(group.Label, byRating[group.Rating].ToArray(), group.Rating)).ToArray();
         return new(activeCheckpoints, groups, labels, heldLabels, report, warnings.Distinct().ToArray(), isComplete);
+    }
+
+    private static int CompareCheckpointPaths(string left, string right)
+    {
+        // ComfyUI sorts Windows relative paths in Python before Suite replaces path separators.
+        var first = left.EnumerateRunes();
+        var second = right.EnumerateRunes();
+        while (first.MoveNext())
+        {
+            if (!second.MoveNext())
+                return 1;
+            int firstValue = first.Current.Value == '/' ? '\\' : first.Current.Value;
+            int secondValue = second.Current.Value == '/' ? '\\' : second.Current.Value;
+            if (firstValue != secondValue)
+                return firstValue.CompareTo(secondValue);
+        }
+        return second.MoveNext() ? -1 : 0;
     }
 
     private static Dictionary<string, Rating>? ReadRatings(string path, List<string> warnings)
