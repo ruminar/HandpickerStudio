@@ -67,9 +67,10 @@ internal static class ImageOperations
 
     public static string SetThumbnail(ImageTarget source, Checkpoint checkpoint)
     {
+        checkpoint.RequireUniquePath();
         if (source.Image.CheckpointPath != checkpoint.RelativePath)
             throw new IOException("選んだ画像の所属を確認してください。");
-        using var model = VerifiedFile.Open(checkpoint.FullPath, checkpoint.Project.CheckpointPath);
+        using var model = VerifiedFile.Open(checkpoint.FullPath, checkpoint.RootPath);
         using var file = VerifiedFile.Open(source.Image.FullPath, source.RootPath, source.Stamp);
         using var input = file.OpenStream();
         var bitmap = ImagePreview.Decode(input, 512);
@@ -85,7 +86,7 @@ internal static class ImageOperations
                 encoder.Save(output);
                 output.Flush(flushToDisk: true);
             }
-            using (VerifiedFile.Open(checkpoint.FullPath, checkpoint.Project.CheckpointPath, model.Stamp)) { }
+            using (VerifiedFile.Open(checkpoint.FullPath, checkpoint.RootPath, model.Stamp)) { }
             if (File.Exists(destination) && File.GetAttributes(destination).HasFlag(FileAttributes.ReparsePoint))
                 throw new IOException("リンクになっている代表サムネイルは置き換えられません。");
             File.Move(temporary, destination, overwrite: true);
@@ -134,9 +135,10 @@ internal static class ImageOperations
 
     private static string PrepareArchive(Checkpoint checkpoint, ImageRoot root)
     {
+        checkpoint.RequireUniquePath();
         if (!root.Enabled || !checkpoint.Project.Roots.Contains(root) || !Directory.Exists(root.OutputPath))
             throw new IOException("接続中で有効な参照ルートを選んでください。");
-        using (VerifiedFile.Open(checkpoint.FullPath, checkpoint.Project.CheckpointPath)) { }
+        using (VerifiedFile.Open(checkpoint.FullPath, checkpoint.RootPath)) { }
         string archive = ArchiveDirectory.GetPath(checkpoint.Project.Id, root);
         ArchiveDirectory.EnsureExists(root, archive, CancellationToken.None);
         string? existing = FindArchiveFolders(checkpoint, root).FirstOrDefault();

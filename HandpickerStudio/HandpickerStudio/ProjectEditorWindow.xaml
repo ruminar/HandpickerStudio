@@ -1,38 +1,74 @@
 <Window x:Class="HandpickerStudio.ProjectEditorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Style="{StaticResource StudioWindowStyle}" Title="プロジェクト設定" Width="840" Height="490" MinWidth="650" MinHeight="365"
+        Style="{StaticResource StudioWindowStyle}" Title="プロジェクト設定" Width="840" Height="640" MinWidth="650" MinHeight="410"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
     <DockPanel Margin="16">
         <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
             <TextBlock x:Name="ErrorText" Foreground="{DynamicResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,5" />
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Content="キャンセル" IsCancel="True" Margin="0,0,8,0" />
-                <Button Content="保存" IsDefault="True" Click="Save" MinWidth="74" />
+                <Button x:Name="SaveButton" Content="保存" IsDefault="True" Click="Save" MinWidth="74" />
             </StackPanel>
         </StackPanel>
 
         <TabControl x:Name="EditorTabs" Background="{DynamicResource PanelBrush}">
             <TabItem Header="基本設定">
-                <StackPanel Margin="14">
-                    <Label Content="プロジェクト名" Target="{Binding ElementName=NameInput}" />
-                    <TextBox x:Name="NameInput" Margin="0,0,0,8" />
-                    <Label Content="Checkpointフォルダー" Target="{Binding ElementName=CheckpointInput}" />
-                    <DockPanel Margin="0,0,0,8">
-                        <Button DockPanel.Dock="Right" Content="選択…" Tag="{Binding ElementName=CheckpointInput}" Click="BrowseFolder" Margin="8,0,0,0" />
-                        <TextBox x:Name="CheckpointInput" />
-                    </DockPanel>
-                    <Label Content="HandpickerSuiteの評価JSON（任意）" Target="{Binding ElementName=EvaluationInput}" />
-                    <DockPanel Margin="0,0,0,8">
-                        <Button DockPanel.Dock="Right" Content="選択…" Click="BrowseEvaluation" Margin="8,0,0,0" />
-                        <TextBox x:Name="EvaluationInput" />
-                    </DockPanel>
-                    <Label Content="Cacheフォルダー（空欄でアプリ配下のcache）" Target="{Binding ElementName=CacheInput}" />
-                    <DockPanel>
-                        <Button DockPanel.Dock="Right" Content="選択…" Tag="{Binding ElementName=CacheInput}" Click="BrowseFolder" Margin="8,0,0,0" />
-                        <TextBox x:Name="CacheInput" />
-                    </DockPanel>
-                </StackPanel>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="14">
+                        <Label Content="プロジェクト名" Target="{Binding ElementName=NameInput}" />
+                        <TextBox x:Name="NameInput" Margin="0,0,0,8" />
+                        <Label Content="ComfyUIフォルダー" Target="{Binding ElementName=ComfyUiInput}" />
+                        <DockPanel>
+                            <Button x:Name="DetectButton" DockPanel.Dock="Right" Content="再検出" Click="Detect" Margin="6,0,0,0" />
+                            <Button DockPanel.Dock="Right" Content="選択…" Tag="{Binding ElementName=ComfyUiInput}"
+                                    Click="BrowseFolder" Margin="8,0,0,0" />
+                            <TextBox x:Name="ComfyUiInput" TextChanged="ComfyUiPathChanged" />
+                        </DockPanel>
+                        <TextBlock x:Name="DetectionStatus" Text="ComfyUI_windows_portable またはComfyUI本体のフォルダーを選択してください。"
+                                   Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,5,0,0" TextWrapping="Wrap" />
+                        <StackPanel x:Name="DetectionResults" Visibility="Collapsed">
+                            <TextBlock Text="Checkpointの参照先" FontWeight="SemiBold" Margin="0,10,0,5" />
+                            <ListView x:Name="DetectedFolders" MaxHeight="155" ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                      AutomationProperties.Name="Checkpointの参照先">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="状態" DisplayMemberBinding="{Binding Status}" Width="105" />
+                                        <GridViewColumn Header="フォルダー" DisplayMemberBinding="{Binding Path}" Width="595" />
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                            <Label Content="HandpickerSuiteのデータ" Target="{Binding ElementName=SuitePicker}" Margin="0,7,0,0" />
+                            <ComboBox x:Name="SuitePicker" DisplayMemberPath="DataPath" SelectionChanged="SuiteChanged"
+                                      AutomationProperties.Name="HandpickerSuiteのデータフォルダー" />
+                            <TextBlock x:Name="SuiteStatus" Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Margin="0,4,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Expander x:Name="AdvancedSettings" Header="手動設定・キャッシュ保存先" Margin="0,12,0,0">
+                            <StackPanel Margin="7,4,0,3">
+                                <StackPanel x:Name="ManualPaths">
+                                    <Label Content="Checkpointフォルダー" Target="{Binding ElementName=CheckpointInput}" />
+                                    <DockPanel Margin="0,0,0,8">
+                                        <Button DockPanel.Dock="Right" Content="選択…" Tag="{Binding ElementName=CheckpointInput}"
+                                                Click="BrowseFolder" Margin="8,0,0,0" />
+                                        <TextBox x:Name="CheckpointInput" />
+                                    </DockPanel>
+                                    <Label Content="HandpickerSuiteの評価JSON（任意）" Target="{Binding ElementName=EvaluationInput}" />
+                                    <DockPanel Margin="0,0,0,8">
+                                        <Button DockPanel.Dock="Right" Content="選択…" Click="BrowseEvaluation" Margin="8,0,0,0" />
+                                        <TextBox x:Name="EvaluationInput" />
+                                    </DockPanel>
+                                </StackPanel>
+                                <Label Content="キャッシュ保存先（空欄でアプリ配下のcache）" Target="{Binding ElementName=CacheInput}" />
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right" Content="選択…" Tag="{Binding ElementName=CacheInput}"
+                                            Click="BrowseFolder" Margin="8,0,0,0" />
+                                    <TextBox x:Name="CacheInput" />
+                                </DockPanel>
+                            </StackPanel>
+                        </Expander>
+                    </StackPanel>
+                </ScrollViewer>
             </TabItem>
             <TabItem x:Name="RootsTab" Header="参照ルート">
                 <DockPanel Margin="12">

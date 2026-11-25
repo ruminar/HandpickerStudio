@@ -1,11 +1,19 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace HandpickerStudio;
 
 internal sealed record ImageRoot(Guid Id, string Name, string OutputPath, string ArchivePath, bool Enabled);
 
-internal sealed record Project(Guid Id, string Name, string CheckpointPath, string EvaluationPath, string CachePath, ImageRoot[] Roots);
+internal sealed record CheckpointFolder(string Path, bool AllowMissing = false);
+
+internal sealed record Project(Guid Id, string Name, string CheckpointPath, string EvaluationPath, string CachePath, ImageRoot[] Roots,
+    string ComfyUiPath = "", CheckpointFolder[]? CheckpointFolders = null)
+{
+    [JsonIgnore]
+    public CheckpointFolder[] ModelFolders => CheckpointFolders ?? [new(CheckpointPath)];
+}
 
 internal sealed record HeldLabel(string OutputPath, string Label);
 
@@ -77,10 +85,20 @@ internal static class WorkspacePaths
                 throw new ArgumentException($"Outputとarchiveまたはcacheの範囲が重複しています。{root.Name}");
         }
 
+        string installation = string.IsNullOrWhiteSpace(project.ComfyUiPath) ? "" : Normalize(project.ComfyUiPath);
+        var modelFolders = project.CheckpointFolders?.Select(folder => folder is not null
+            ? folder with { Path = Normalize(folder.Path ?? "") }
+            : throw new ArgumentException("Checkpoint参照先を確認できません。"))
+            .DistinctBy(folder => folder.Path, StringComparer.OrdinalIgnoreCase).ToArray();
+        if (modelFolders is { Length: 0 } || (installation.Length != 0 && modelFolders is null))
+            throw new ArgumentException("Checkpointの参照先を指定してください。");
+
         return project with
         {
             Name = project.Name.Trim(),
-            CheckpointPath = Normalize(project.CheckpointPath ?? ""),
+            CheckpointPath = modelFolders is null ? Normalize(project.CheckpointPath ?? "") : modelFolders[0].Path,
+            ComfyUiPath = installation,
+            CheckpointFolders = modelFolders,
             EvaluationPath = string.IsNullOrWhiteSpace(project.EvaluationPath) ? "" : Normalize(project.EvaluationPath),
             CachePath = cachePath,
             Roots = roots

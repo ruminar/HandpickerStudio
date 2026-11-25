@@ -6,9 +6,17 @@ namespace HandpickerStudio;
 
 internal enum Rating { God, Favorite, Nice, Keep, Delete, None, Unavailable }
 
-internal sealed record Checkpoint(Project Project, string RelativePath, string FullPath, string SafeName)
+internal sealed record Checkpoint(Project Project, string RelativePath, string FullPath, string SafeName,
+    string? SourceFolder = null, bool SharedRelativePath = false)
 {
     public string Name => Path.GetFileNameWithoutExtension(RelativePath);
+    public string RootPath => SourceFolder ?? Project.CheckpointPath;
+
+    public void RequireUniquePath()
+    {
+        if (SharedRelativePath)
+            throw new IOException($"同じ相対パスのCheckpointが複数の参照先にあります。{RelativePath}");
+    }
 }
 
 internal sealed record CheckpointGroup(string Name, Checkpoint[] Items, Rating Rating);
@@ -60,14 +68,22 @@ internal static partial class CatalogService
         List<string> warnings = [];
         foreach (Project project in projects)
         {
-            foreach (string path in EnumerateFiles(project.CheckpointPath,
-                error => warnings.Add($"{project.Name}のCheckpoint一覧: {error}"), token))
+            void Warn(string error) => warnings.Add($"{project.Name}のCheckpoint一覧: {error}");
+            foreach (var folder in project.ModelFolders)
             {
-                if (!Path.GetExtension(path).Equals(".safetensors", StringComparison.OrdinalIgnoreCase))
+                token.ThrowIfCancellationRequested();
+                if (folder.AllowMissing && !DirectoryAvailable(folder.Path, Warn,
+                    allowMissing: Directory.Exists(Directory.GetParent(folder.Path)?.Parent?.FullName)))
                     continue;
 
-                string relativePath = RelativePath(project.CheckpointPath, path);
-                checkpoints.Add(new(project, relativePath, path, SafeName(relativePath)));
+                foreach (string path in EnumerateFiles(folder.Path, Warn, token))
+                {
+                    if (!Path.GetExtension(path).Equals(".safetensors", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    string relativePath = RelativePath(folder.Path, path);
+                    checkpoints.Add(new(project, relativePath, path, SafeName(relativePath), folder.Path));
+                }
             }
         }
 
@@ -83,7 +99,11 @@ internal static partial class CatalogService
                 collision.OrderBy(item => item.Project.Name).ThenBy(item => item.RelativePath)
                     .Select(item => $"{item.Project.Name} | {item.SafeName} | {item.FullPath}"))));
 
-        var activeCheckpoints = checkpoints.Where(item => item.Project.Id == active.Id)
+        var activeModels = checkpoints.Where(item => item.Project.Id == active.Id).ToArray();
+        var duplicates = activeModels.GroupBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Skip(1).Any()).Select(group => group.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var activeCheckpoints = activeModels.DistinctBy(item => item.RelativePath, StringComparer.Ordinal)
+            .Select(item => duplicates.Contains(item.RelativePath) ? item with { SharedRelativePath = true } : item)
             .OrderBy(item => item.RelativePath, CheckpointOrder).ToArray();
         bool isComplete = warnings.Count == 0;
         var ratings = ReadRatings(active.EvaluationPath, warnings);
@@ -227,7 +247,7 @@ internal static partial class CatalogService
                 if (document.RootElement.ValueKind != JsonValueKind.Object ||
                     !document.RootElement.TryGetProperty("checkpointRelativePath", out var key) || key.ValueKind != JsonValueKind.String)
                     return null;
-                return checkpoints.FirstOrDefault(checkpoint => checkpoint.RelativePath == key.GetString())?.RelativePath;
+                return checkpoints.FirstOrDefault(checkpoint => !checkpoint.SharedRelativePath && checkpoint.RelativePath == key.GetString())?.RelativePath;
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
             {

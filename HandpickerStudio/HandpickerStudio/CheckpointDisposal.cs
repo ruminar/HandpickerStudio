@@ -36,8 +36,7 @@ internal static class CheckpointDisposal
             throw new IOException("退避中に対象の画像が追加されました。生成を停止したうえで、もう一度確認してください。");
 
         var operation = Guid.NewGuid();
-        string parent = Path.GetDirectoryName(project.CheckpointPath) ?? throw new IOException("同じドライブに作業場所を確保できません。");
-        string directory = Path.Combine(parent, ".HandpickerStudio-Recycle", operation.ToString("N"));
+        string directory = StageDirectory(checkpoint.RootPath, operation);
         using var process = Process.GetCurrentProcess();
         var record = new DisposalRecord(operation, project.Id, checkpoint.RelativePath, checkpoint.FullPath,
             Path.Combine(directory, Path.GetFileName(checkpoint.FullPath)), "prepared", expected, Environment.MachineName,
@@ -56,7 +55,7 @@ internal static class CheckpointDisposal
 
             ArchiveDirectory.RequireManagedDirectory(Path.GetDirectoryName(directory)!);
             Directory.CreateDirectory(directory);
-            using var file = VerifiedFile.Open(checkpoint.FullPath, project.CheckpointPath, expected, forMove: true);
+            using var file = VerifiedFile.Open(checkpoint.FullPath, checkpoint.RootPath, expected, forMove: true);
             suite.WriteRecord(record);
             try
             {
@@ -156,10 +155,13 @@ internal static class CheckpointDisposal
         }
         catch (ArgumentException) { }
 
-        var original = Path.GetFullPath(Path.Combine(project.CheckpointPath, record.Key));
-        var stageRoot = Path.Combine(Path.GetDirectoryName(project.CheckpointPath)!, ".HandpickerStudio-Recycle", record.Id.ToString("N"));
-        if (!WorkspacePaths.Within(original, project.CheckpointPath) || !original.Equals(record.OriginalPath, StringComparison.OrdinalIgnoreCase) ||
-            !Path.Combine(stageRoot, Path.GetFileName(original)).Equals(record.StagedPath, StringComparison.OrdinalIgnoreCase))
+        string original = record.OriginalPath;
+        var folder = project.ModelFolders.FirstOrDefault(folder => WorkspacePaths.Within(original, folder.Path) &&
+            Path.GetFullPath(Path.Combine(folder.Path, record.Key)).Equals(original, StringComparison.OrdinalIgnoreCase));
+        if (folder is null)
+            throw new IOException("廃棄時のCheckpoint参照先と現在の設定が異なります。");
+        string stageRoot = StageDirectory(folder.Path, record.Id);
+        if (!Path.Combine(stageRoot, Path.GetFileName(original)).Equals(record.StagedPath, StringComparison.OrdinalIgnoreCase))
             throw new IOException("廃棄時のCheckpoint参照先と現在の設定が異なります。");
 
         using var suite = new SuiteEvaluation(project);
@@ -172,10 +174,16 @@ internal static class CheckpointDisposal
         }
         else
         {
-            using var originalFile = VerifiedFile.Open(original, project.CheckpointPath, record.Stamp);
+            using var originalFile = VerifiedFile.Open(original, folder.Path, record.Stamp);
         }
         suite.RemoveRecord(record);
         RemoveEmptyStage(stageRoot);
+    }
+
+    private static string StageDirectory(string root, Guid operation)
+    {
+        string parent = Path.GetDirectoryName(root) ?? throw new IOException("同じドライブに作業場所を確保できません。");
+        return Path.Combine(parent, ".HandpickerStudio-Recycle", operation.ToString("N"));
     }
 
     private static string? Finish(Checkpoint checkpoint, DisposalRecord record)

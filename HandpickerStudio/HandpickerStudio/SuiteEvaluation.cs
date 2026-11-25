@@ -63,11 +63,12 @@ internal sealed class SuiteEvaluation : IDisposable
 
     public FileStamp VerifyCheckpoint(Checkpoint checkpoint)
     {
+        checkpoint.RequireUniquePath();
         if (statuses.Any(item => item.Key.Equals(checkpoint.RelativePath, StringComparison.OrdinalIgnoreCase) &&
             item.Key != checkpoint.RelativePath))
             throw new IOException("評価キーの大文字小文字が実ファイルと異なります。");
 
-        using var file = VerifiedFile.Open(checkpoint.FullPath, checkpoint.Project.CheckpointPath);
+        using var file = VerifiedFile.Open(checkpoint.FullPath, checkpoint.RootPath);
         int matches = 0;
         foreach (string root in AvailableCheckpointRoots())
         {

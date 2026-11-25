@@ -1,6 +1,6 @@
 # HandpickerStudio 基本設計書
 
-- 文書改訂番号：Rev. 9（評価ペイン内のCheckpointの順序を明記）
+- 文書改訂番号：Rev. 10（ComfyUIフォルダーからの参照先検出を追加）
 - 対象アプリケーションバージョン：HandpickerStudio v0.1.0
 - 作成日：2026-11-24
 - 対象：Windowsデスクトップアプリ HandpickerStudio および ComfyUI-CheckpointHandpickerSuite 連携改修
@@ -66,7 +66,8 @@ MVVM・画像処理のライブラリと非同期処理方式は詳細設計で�
 |---|---|
 | Project ID | 名称変更に影響されない内部識別子 |
 | プロジェクト名 | 任意の表示名 |
-| Checkpoint参照先 | 対象モデル群の格納場所 |
+| ComfyUIフォルダー | ポータブル版の外側のフォルダー、またはComfyUI本体のフォルダー。指定するとCheckpointと評価情報の参照先を検出する |
+| Checkpoint参照先 | ComfyUIの標準フォルダーと追加設定から検出したモデル格納場所。従来の手動指定も利用可能 |
 | 評価情報参照先 | HandpickerSuiteの評価DBへの参照。相対パスの基準も識別可能にする |
 | 画像参照ルート | 第4章のカード情報の集合 |
 | cache保存先 | プロジェクト・ルート間で衝突しない保存場所 |
@@ -74,6 +75,10 @@ MVVM・画像処理のライブラリと非同期処理方式は詳細設計で�
 ### 3.2 操作
 
 プロジェクトの新規登録、編集、切り替え、登録解除を行う。上部の選択UIでプロジェクトを切り替える。最後に開いたプロジェクトを次回起動時に復元する案とする。登録解除では元画像・archive・Checkpointを削除しない。
+
+ComfyUIフォルダーを指定すると、本体の `extra_model_paths.yaml` を読み、`models/checkpoints`、追加の `checkpoints`、CheckpointSave用の `output/checkpoints` を優先順に並べ、存在を確認する。検出したフォルダーをプロジェクトのモデル一覧に使う。手動設定済みのプロジェクトは従来どおり利用できる。追加設定を変更した場合はプロジェクト設定から再検出できる。
+
+既定および追加の `custom_nodes` では、Manager版 `checkpoint-handpicker-suite` とGit版 `ComfyUI-CheckpointHandpickerSuite` の `data` を確認し、評価JSONとStudio連携情報の有無を表示する。利用可能な評価JSONが一つなら自動選択し、複数ある場合は使用するものを選択する。同じCheckpoint相対パスが複数の参照先にある場合、表示は優先順の先頭を使い、その評価キーが共有される操作を保留する。
 
 アプリ起動時およびプロジェクト切り替え時には、対象プロジェクトの評価情報、Checkpoint一覧、cacheの整合性、走査状態を確認する。他プロジェクトのcacheや画像を削除対象にしてはならない。
 

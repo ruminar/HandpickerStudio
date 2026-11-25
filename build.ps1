@@ -41,6 +41,7 @@ try {
 
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'README.md') -Destination $publishPath
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'LICENSE') -Destination $publishPath
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ThirdPartyNotices.txt') -Destination $publishPath
 
     $runtimeConfigPath = Join-Path $publishPath 'HandpickerStudio.runtimeconfig.json'
     $runtimeOptions = (Get-Content -LiteralPath $runtimeConfigPath -Raw | ConvertFrom-Json).runtimeOptions
@@ -56,7 +57,7 @@ try {
     $archive = [IO.Compression.ZipFile]::OpenRead($stagedZip)
     try {
         $requiredEntries = 'HandpickerStudio.exe', 'HandpickerStudio.dll', 'HandpickerStudio.deps.json',
-            'HandpickerStudio.runtimeconfig.json', 'README.md', 'LICENSE'
+            'HandpickerStudio.runtimeconfig.json', 'YamlDotNet.dll', 'README.md', 'LICENSE', 'ThirdPartyNotices.txt'
         foreach ($entry in $requiredEntries) {
             if ($null -eq $archive.GetEntry($entry)) {
                 throw "The package is missing $entry."
