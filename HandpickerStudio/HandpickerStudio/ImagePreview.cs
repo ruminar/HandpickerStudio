@@ -16,6 +16,9 @@ public sealed class ImagePreview : Image
     public static readonly DependencyProperty DecodeLimitProperty = DependencyProperty.Register(nameof(DecodeLimit), typeof(int),
         typeof(ImagePreview), new PropertyMetadata(1600, OnRequestChanged));
 
+    public static readonly DependencyProperty CacheProperty = DependencyProperty.Register(nameof(Cache), typeof(PreviewCache),
+        typeof(ImagePreview), new PropertyMetadata(null, OnRequestChanged));
+
     public ImagePreview()
     {
         Loaded += (_, _) => LoadPreview();
@@ -38,6 +41,12 @@ public sealed class ImagePreview : Image
         set => SetValue(DecodeLimitProperty, value);
     }
 
+    public PreviewCache? Cache
+    {
+        get => (PreviewCache?)GetValue(CacheProperty);
+        set => SetValue(CacheProperty, value);
+    }
+
     private static void OnRequestChanged(DependencyObject sender, DependencyPropertyChangedEventArgs e) =>
         ((ImagePreview)sender).LoadPreview();
 
@@ -53,12 +62,13 @@ public sealed class ImagePreview : Image
         pending = request;
         var token = request.Token;
         int limit = DecodeLimit;
+        var cache = Cache;
         try
         {
             await Decoders.WaitAsync(token);
             try
             {
-                var bitmap = await Task.Run(() => Decode(path, limit), token);
+                var bitmap = await Task.Run(() => cache is null ? Decode(path, limit) : cache.Decode(path, limit, token), token);
                 if (!token.IsCancellationRequested)
                     Source = bitmap;
             }
@@ -78,7 +88,7 @@ public sealed class ImagePreview : Image
         }
     }
 
-    private static BitmapSource Decode(string path, int limit)
+    internal static BitmapSource Decode(string path, int limit)
     {
         using var stream = CatalogService.OpenForReading(path);
         return Decode(stream, limit);

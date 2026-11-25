@@ -17,6 +17,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
     private bool showingUnresolved;
     private bool updatingProjects;
     private string settingsNotice = "";
+    private string cacheNotice = "";
     private string[] scanWarnings = [];
 
     public MainViewModel(SettingsStore store) => this.store = store;
@@ -28,7 +29,9 @@ internal sealed class MainViewModel : INotifyPropertyChanged
     public HeldLabel[] HeldLabels => settings.HeldLabels.Concat(observedHolds).DistinctBy(CatalogService.HoldKey).ToArray();
     public bool CanSave { get; private set; } = true;
     public bool CanEditProject => CanSave && SelectedProject is not null;
-    public AppearanceTheme Appearance => settings.Appearance == AppearanceTheme.Dark ? AppearanceTheme.Dark : AppearanceTheme.Light;
+    public AppearanceTheme Appearance => Enum.IsDefined(settings.Appearance) ? settings.Appearance : AppearanceTheme.Light;
+    public bool CreateImageCache => settings.CreateImageCache;
+    public PreviewCache? GalleryCache { get; private set; }
     public GalleryLayout GalleryView { get; private set; }
     public int GalleryViewIndex => (int)GalleryView;
     public int TileSize { get; private set; } = WorkspaceSettings.DefaultTileSize;
@@ -44,7 +47,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
     public string GalleryContext => selectedCheckpoint?.RelativePath ?? "";
     public string StatusText => IsLoading ? "走査中…" : $"{Images.Length} 枚";
     public string Warnings => string.Join(Environment.NewLine,
-        new[] { settingsNotice }.Concat(scanWarnings).Where(value => value.Length != 0));
+        new[] { settingsNotice, cacheNotice }.Concat(scanWarnings).Where(value => value.Length != 0));
     public bool HasWarnings => Warnings.Length > 0;
     public bool IsGalleryEmpty => Images.Length == 0;
     public string EmptyGalleryMessage => SelectedProject is null ? "プロジェクトを登録してください。" : IsLoading ? "走査中…" :
@@ -64,6 +67,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
             if (CanSave && settings.SelectedProjectId != value?.Id)
                 TrySave(settings with { SelectedProjectId = value?.Id });
 
+            UpdateGalleryCache();
             Changed();
             Changed(nameof(CanEditProject));
             _ = ReloadAsync();
@@ -86,13 +90,15 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         GalleryView = settings.Layout is { } layout && Enum.IsDefined(layout) ? layout :
             settings.UseTileView ? GalleryLayout.Tiles : GalleryLayout.List;
         TileSize = Math.Clamp(settings.TileSize, WorkspaceSettings.MinimumTileSize, WorkspaceSettings.MaximumTileSize);
+        if (settings.CreateImageCache && settings.PreviewCacheOwner.GetValueOrDefault() == Guid.Empty)
+            TrySave(settings);
         Changed(nameof(Appearance));
         Changed(nameof(GalleryView));
         Changed(nameof(GalleryViewIndex));
         Changed(nameof(TileSize));
         UpdateProjects(settings.Projects.FirstOrDefault(project => project.Id == settings.SelectedProjectId) ??
             settings.Projects.FirstOrDefault());
-        await ReloadAsync();
+        await Task.WhenAll(ReloadAsync(), ClearDisabledCacheAsync());
     }
 
     public async Task<bool> SetProjectAsync(Project project)
@@ -179,10 +185,24 @@ internal sealed class MainViewModel : INotifyPropertyChanged
             TrySave(settings with { TileSize = size });
     }
 
-    public void ChangeAppearance(AppearanceTheme appearance)
+    public async Task ChangeDisplaySettingsAsync(AppearanceTheme appearance, bool createCache)
     {
-        if (Appearance != appearance && TrySave(settings with { Appearance = appearance }))
+        bool cacheChanged = CreateImageCache != createCache;
+        if ((Appearance != appearance || cacheChanged) &&
+            TrySave(settings with { Appearance = appearance, CreateImageCache = createCache }))
+        {
             Changed(nameof(Appearance));
+            if (cacheChanged)
+                UpdateGalleryCache();
+        }
+
+        if (!CreateImageCache)
+            await ClearDisabledCacheAsync();
+        else if (cacheNotice.Length > 0)
+        {
+            cacheNotice = "";
+            NotifyWarnings();
+        }
     }
 
     public async Task ReloadAsync(bool keepGallery = false)
@@ -257,7 +277,45 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    public void Cancel() => currentLoad?.Cancel();
+    public void Cancel()
+    {
+        currentLoad?.Cancel();
+        GalleryCache?.Stop();
+    }
+
+    private void UpdateGalleryCache()
+    {
+        GalleryCache?.Stop();
+        GalleryCache = CreateImageCache && selectedProject is { } project &&
+            settings.PreviewCacheOwner is { } owner && owner != Guid.Empty
+            ? new PreviewCache(project, owner, store) : null;
+        Changed(nameof(GalleryCache));
+    }
+
+    private async Task ClearDisabledCacheAsync()
+    {
+        if (CreateImageCache || settings.PreviewCacheOwner is not { } owner || owner == Guid.Empty ||
+            settings.PreviewCacheRoots is not { Length: > 0 } roots)
+            return;
+
+        var failures = await Task.Run(() =>
+        {
+            var messages = new List<string>();
+            foreach (var root in roots)
+            {
+                try { PreviewCache.Clear(root, owner, store); }
+                catch (Exception error) when (PreviewCache.IsCacheError(error)) { messages.Add($"{root} {error.Message}"); }
+            }
+            return messages;
+        });
+
+        if (!CreateImageCache)
+        {
+            cacheNotice = failures.Count == 0 ? "" :
+                $"画像キャッシュの削除を完了できません。{Environment.NewLine}{string.Join(Environment.NewLine, failures)}";
+            NotifyWarnings();
+        }
+    }
 
     private bool TrySave(WorkspaceSettings next)
     {
@@ -266,6 +324,16 @@ internal sealed class MainViewModel : INotifyPropertyChanged
 
         try
         {
+            if (next.CreateImageCache)
+            {
+                var owner = next.PreviewCacheOwner.GetValueOrDefault();
+                next = next with
+                {
+                    PreviewCacheOwner = owner == Guid.Empty ? Guid.NewGuid() : owner,
+                    PreviewCacheRoots = (next.PreviewCacheRoots ?? []).Concat(next.Projects.Select(WorkspacePaths.CacheBase))
+                        .Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
+                };
+            }
             store.Save(next);
             settings = next;
             settingsNotice = "";
@@ -286,6 +354,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         try
         {
             selectedProject = project;
+            UpdateGalleryCache();
             Changed(nameof(Projects));
             Changed(nameof(SelectedProject));
             Changed(nameof(CanEditProject));

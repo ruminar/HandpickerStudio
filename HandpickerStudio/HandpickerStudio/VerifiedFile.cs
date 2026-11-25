@@ -68,10 +68,14 @@ internal sealed class VerifiedFile : IDisposable
         throw Win32Error($"移動先を利用できません。{destination}");
     }
 
-    public void RemoveAfterCopy()
+    public void RemoveAfterCopy() => Delete("コピーは完了しました。移動元の整理に失敗しました。");
+
+    public void DeleteCacheFile() => Delete("画像キャッシュを削除できません。");
+
+    private void Delete(string message)
     {
         if (!SetFileInformationByHandle(handle, 4, [1], 1))
-            throw Win32Error($"コピーは完了しました。移動元の整理に失敗しました。{path}");
+            throw Win32Error($"{message}{path}");
     }
 
     public void Dispose() => handle.Dispose();

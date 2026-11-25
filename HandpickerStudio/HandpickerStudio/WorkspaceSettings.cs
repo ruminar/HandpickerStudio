@@ -11,11 +11,12 @@ internal sealed record HeldLabel(string OutputPath, string Label);
 
 internal enum GalleryLayout { List, Tiles, SimpleTiles }
 
-internal enum AppearanceTheme { Light, Dark }
+internal enum AppearanceTheme { Light, Dark, System }
 
 internal sealed record WorkspaceSettings(int Version, Project[] Projects, Guid? SelectedProjectId, HeldLabel[] HeldLabels,
     bool UseTileView = false, GalleryLayout? Layout = null, int TileSize = WorkspaceSettings.DefaultTileSize,
-    AppearanceTheme Appearance = AppearanceTheme.Light)
+    AppearanceTheme Appearance = AppearanceTheme.Light, bool CreateImageCache = false,
+    Guid? PreviewCacheOwner = null, string[]? PreviewCacheRoots = null)
 {
     public const int DefaultTileSize = 174;
     public const int MinimumTileSize = 96;
@@ -42,6 +43,8 @@ internal static class WorkspacePaths
             StringComparison.OrdinalIgnoreCase);
 
     public static string DefaultCachePath => Path.Combine(AppContext.BaseDirectory, "cache");
+
+    public static string CacheBase(Project project) => project.CachePath.Length == 0 ? DefaultCachePath : project.CachePath;
 
     public static Project Normalize(Project project)
     {
@@ -110,7 +113,9 @@ internal sealed class SettingsStore(string path)
         var projects = settings.Projects.Select(WorkspacePaths.Normalize).ToArray();
         var holds = settings.HeldLabels.Select(hold => hold with { OutputPath = WorkspacePaths.Normalize(hold.OutputPath) }).ToArray();
         savedBytes = bytes;
-        return settings with { Projects = projects, HeldLabels = holds };
+        var cacheRoots = settings.PreviewCacheRoots?.Select(WorkspacePaths.Normalize)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        return settings with { Projects = projects, HeldLabels = holds, PreviewCacheRoots = cacheRoots };
     }
 
     public void Save(WorkspaceSettings settings)
@@ -149,5 +154,15 @@ internal sealed class SettingsStore(string path)
     {
         try { return File.ReadAllBytes(path); }
         catch (FileNotFoundException) { return null; }
+    }
+
+    public bool CanWritePreviewCache(Guid owner)
+    {
+        using var input = CatalogService.OpenForReading(path);
+        using var document = JsonDocument.Parse(input);
+        var root = document.RootElement;
+        return root.TryGetProperty("createImageCache", out var enabled) && enabled.ValueKind == JsonValueKind.True &&
+            root.TryGetProperty("previewCacheOwner", out var identity) && identity.ValueKind == JsonValueKind.String &&
+            identity.TryGetGuid(out var current) && current == owner;
     }
 }

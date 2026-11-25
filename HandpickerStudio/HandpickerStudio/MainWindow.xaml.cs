@@ -33,11 +33,11 @@ public partial class MainWindow : Window
 
     private async void EditProject(object sender, RoutedEventArgs e) => await EditProjectAsync(viewModel.SelectedProject);
 
-    private void EditAppearance(object sender, RoutedEventArgs e)
+    private async void EditAppearance(object sender, RoutedEventArgs e)
     {
-        var editor = new AppearanceSettingsWindow(viewModel.Appearance) { Owner = this };
+        var editor = new AppearanceSettingsWindow(viewModel.Appearance, viewModel.CreateImageCache) { Owner = this };
         if (editor.ShowDialog() == true)
-            viewModel.ChangeAppearance(editor.Appearance);
+            await viewModel.ChangeDisplaySettingsAsync(editor.Appearance, editor.CreateImageCache);
     }
 
     private async void EditRoots(object sender, RoutedEventArgs e) => await EditProjectAsync(viewModel.SelectedProject, showRoots: true);

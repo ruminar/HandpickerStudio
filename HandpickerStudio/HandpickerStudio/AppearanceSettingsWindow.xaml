@@ -8,7 +8,11 @@
         <ComboBox x:Name="AppearancePicker" AutomationProperties.Name="配色">
             <ComboBoxItem Content="ライト" />
             <ComboBoxItem Content="ダーク" />
+            <ComboBoxItem Content="システムに合わせる" />
         </ComboBox>
+        <CheckBox x:Name="CacheOption" Content="画像キャッシュを作る" Margin="0,14,0,3" />
+        <TextBlock Text="オフにすると、作成済みの画像キャッシュを削除します。"
+                   TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
             <Button Content="適用" IsDefault="True" Click="Apply" MinWidth="76" Margin="0,0,8,0" />
             <Button Content="キャンセル" IsCancel="True" MinWidth="76" />
