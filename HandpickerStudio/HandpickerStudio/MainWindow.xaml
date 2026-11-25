@@ -118,6 +118,7 @@
                         <StackPanel x:Name="CheckpointPanes" Background="{DynamicResource PanelBrush}" ClipToBounds="True"
                                     SizeChanged="CheckpointPanesSizeChanged"
                                     AllowDrop="True" PreviewMouseLeftButtonDown="BeginCheckpointDrag" PreviewMouseMove="TrackCheckpointDrag"
+                                    PreviewMouseLeftButtonUp="FinishCheckpointClick" MouseLeave="CancelCheckpointPress"
                                     DragOver="CheckpointDragOver" DragLeave="CheckpointDragLeave" Drop="DropCheckpoint"
                                     PreviewMouseRightButtonDown="CheckpointMenuTarget" ContextMenuOpening="PrepareCheckpointMenu">
                             <StackPanel.ContextMenu>
@@ -236,9 +237,9 @@
                                                               HorizontalAlignment="Right" VerticalAlignment="Top"
                                                               Visibility="Collapsed" IsHitTestVisible="False">
                                                             <Path Data="M 1,1 L 26,1 43,18 43,43 Z"
-                                                                  Fill="#C61F3A" Stroke="White" StrokeThickness="1.25" StrokeLineJoin="Round" />
-                                                            <Path Data="M 20,14 L 25,19 32,12" Stroke="White" StrokeThickness="2.5"
-                                                                  StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                                                                  Fill="#AD5723" Stroke="White" StrokeThickness="1.25" StrokeLineJoin="Round" />
+                                                            <Path Data="M 27,7.5 L 28.8,11.7 33.3,12.1 29.9,15 30.9,19.5 27,17.2 23.1,19.5 24.1,15 20.7,12.1 25.2,11.7 Z"
+                                                                  Stroke="White" StrokeThickness="1.7" StrokeLineJoin="Round" />
                                                         </Grid>
                                                     </Grid>
                                                 </Border>

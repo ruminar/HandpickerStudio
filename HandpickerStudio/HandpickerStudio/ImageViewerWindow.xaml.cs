@@ -20,6 +20,11 @@ public partial class ImageViewerWindow : Window
         this.images = [.. images];
         this.project = project;
         this.checkpoint = checkpoint;
+        Preview.PreviewLoaded += (_, _) =>
+        {
+            if (previousPlacement.HasValue && WindowState == WindowState.Normal)
+                FitExpandedView();
+        };
         ShowAt(startIndex);
     }
 
@@ -37,30 +42,46 @@ public partial class ImageViewerWindow : Window
         ImagePath.Text = image.FullPath;
         ImagePath.ToolTip = image.FullPath;
         Preview.FilePath = image.FullPath;
-        PreviousButton.IsEnabled = index > 0;
-        NextButton.IsEnabled = index < images.Count - 1;
+        UpdateNavigationButtons();
     }
 
-    private void Previous(object sender, RoutedEventArgs e) => ShowAt(currentIndex - 1);
+    private void UpdateNavigationButtons()
+    {
+        PreviousButton.IsEnabled = !operationRunning && currentIndex > 0;
+        NextButton.IsEnabled = !operationRunning && currentIndex < images.Count - 1;
+    }
 
-    private void Next(object sender, RoutedEventArgs e) => ShowAt(currentIndex + 1);
+    private void MoveTo(int index)
+    {
+        if (!operationRunning)
+            ShowAt(index);
+    }
+
+    private void Previous(object sender, RoutedEventArgs e) => MoveTo(currentIndex - 1);
+
+    private void Next(object sender, RoutedEventArgs e) => MoveTo(currentIndex + 1);
 
     private void NavigateWithKey(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Delete)
         {
             e.Handled = true;
-            RecycleCurrent(sender, e);
+            if (!e.IsRepeat)
+                RecycleCurrent(sender, e);
             return;
         }
         if (e.Key is not (Key.Left or Key.Right))
             return;
         e.Handled = true;
-        ShowAt(currentIndex + (e.Key == Key.Left ? -1 : 1));
+        MoveTo(currentIndex + (e.Key == Key.Left ? -1 : 1));
     }
 
     private void NavigateWithWheel(object sender, MouseWheelEventArgs e)
     {
+        e.Handled = true;
+        if (operationRunning || images.Count == 0)
+            return;
+
         const int WheelDelta = 120;
         wheelRemainder += e.Delta;
         int steps = wheelRemainder / WheelDelta;
@@ -68,12 +89,11 @@ public partial class ImageViewerWindow : Window
         int index = Math.Clamp(currentIndex - steps, 0, images.Count - 1);
         if (index != currentIndex)
             ShowAt(index);
-        e.Handled = true;
     }
 
     private void PrepareMenu(object sender, ContextMenuEventArgs e)
     {
-        ViewerRecycle.IsEnabled = !operationRunning && images[currentIndex].CheckpointPath is not null;
+        ViewerRecycle.IsEnabled = !operationRunning && images.Count > 0 && images[currentIndex].CheckpointPath is not null;
         ViewerThumbnail.IsEnabled = ViewerRecycle.IsEnabled && checkpoint is not null;
     }
 
@@ -84,50 +104,53 @@ public partial class ImageViewerWindow : Window
         if (operationRunning || images.Count == 0 || images[currentIndex].CheckpointPath is null)
             return;
 
-        ImageEntry image = images[currentIndex];
-        bool recycled = await RunAsync(async () => await RecycleBin.RunOnSta(() =>
+        int removing = currentIndex;
+        ImageEntry image = images[removing];
+        await RunAsync(async () =>
         {
-            ImageOperations.Recycle(ImageOperations.Capture(project, image));
-            return true;
-        }));
-        if (!recycled)
-            return;
+            await RecycleBin.RunOnSta(() =>
+            {
+                ImageOperations.Recycle(ImageOperations.Capture(project, image));
+                return true;
+            });
 
-        ImagesChanged = true;
-        images.RemoveAt(currentIndex);
+            ImagesChanged = true;
+            images.RemoveAt(removing);
+            if (images.Count > 0)
+                ShowAt(Math.Min(removing, images.Count - 1));
+        });
         if (images.Count == 0)
             Close();
-        else
-            ShowAt(Math.Min(currentIndex, images.Count - 1));
     }
 
     private async void SetCurrentThumbnail(object sender, RoutedEventArgs e)
     {
-        if (operationRunning || checkpoint is null)
+        if (operationRunning || checkpoint is null || images.Count == 0)
             return;
         ImageEntry image = images[currentIndex];
         await RunAsync(async () =>
         {
             string path = await Task.Run(() => ImageOperations.SetThumbnail(ImageOperations.Capture(project, image), checkpoint));
             MessageBox.Show(this, $"保存しました。{Environment.NewLine}{path}", "代表サムネイル");
-            return true;
         });
     }
 
-    private async Task<bool> RunAsync(Func<Task<bool>> operation)
+    private async Task RunAsync(Func<Task> operation)
     {
         operationRunning = true;
-        IsEnabled = false;
-        try { return await operation(); }
+        Preview.Focus();
+        UpdateNavigationButtons();
+        try { await operation(); }
         catch (Exception error) when (MainWindow.IsOperationError(error))
         {
             MessageBox.Show(this, error.Message, "画像の操作");
-            return false;
         }
         finally
         {
-            IsEnabled = true;
             operationRunning = false;
+            UpdateNavigationButtons();
+            if (IsActive)
+                Preview.Focus();
         }
     }
 }

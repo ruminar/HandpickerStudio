@@ -47,6 +47,8 @@ public sealed class ImagePreview : Image
         set => SetValue(CacheProperty, value);
     }
 
+    internal event EventHandler? PreviewLoaded;
+
     private static void OnRequestChanged(DependencyObject sender, DependencyPropertyChangedEventArgs e) =>
         ((ImagePreview)sender).LoadPreview();
 
@@ -70,7 +72,10 @@ public sealed class ImagePreview : Image
             {
                 var bitmap = await Task.Run(() => cache is null ? Decode(path, limit) : cache.Decode(path, limit, token), token);
                 if (!token.IsCancellationRequested)
+                {
                     Source = bitmap;
+                    PreviewLoaded?.Invoke(this, EventArgs.Empty);
+                }
             }
             finally { Decoders.Release(); }
         }

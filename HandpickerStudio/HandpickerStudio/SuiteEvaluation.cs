@@ -92,17 +92,48 @@ internal sealed class SuiteEvaluation : IDisposable
         ParseRating(statuses[relativePath]?["status"]?.GetValue<string>(), out Rating current) ? current : Rating.None;
 
     public string? ChangeRating(Checkpoint checkpoint, Rating rating)
+        => UpdateCheckpointRating(checkpoint, rating) ? Save() : null;
+
+    public string? ChangeRatings(Checkpoint[] checkpoints, Rating rating)
+    {
+        if (checkpoints is [var checkpoint])
+            return ChangeRating(checkpoint, rating);
+
+        int updated = 0;
+        List<string> failures = [];
+        foreach (var item in checkpoints)
+        {
+            try
+            {
+                if (UpdateCheckpointRating(item, rating))
+                    updated++;
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
+            {
+                failures.Add($"{item.RelativePath} {error.Message}");
+            }
+        }
+
+        string? notice = updated > 0 ? Save() : null;
+        if (failures.Count == 0)
+            return notice;
+        if (notice is not null)
+            failures.Add(notice);
+        return $"評価を変更 {updated} 件。変更できなかった項目があります。{Environment.NewLine}{string.Join(Environment.NewLine, failures)}";
+    }
+
+    private bool UpdateCheckpointRating(Checkpoint checkpoint, Rating rating)
     {
         if (rating == Rating.Unavailable)
             throw new ArgumentException("指定できない評価です。", nameof(rating));
         VerifyCheckpoint(checkpoint);
         RequireIdle(checkpoint.RelativePath);
         if (GetRating(checkpoint.RelativePath) == rating)
-            return null;
+            return false;
 
         CancelReservation(checkpoint.RelativePath, $"studio_status_changed_to_{RatingValue(rating)}");
         UpdateRating(checkpoint, rating);
-        return Save();
+        return true;
     }
 
     internal string? SaveImportedRatings(IEnumerable<RatingImportChange> matches)

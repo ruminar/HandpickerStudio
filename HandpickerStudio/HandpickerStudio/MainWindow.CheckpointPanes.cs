@@ -12,6 +12,7 @@ public partial class MainWindow
     private CheckpointGroup[] displayedGroups = [];
     private Guid? displayedProject;
     private bool synchronizingCheckpointSelection;
+    private string? checkpointRangeAnchor;
     private CheckpointPane? highlightedDropPane;
 
     private void ViewModelChanged(object? sender, PropertyChangedEventArgs e)
@@ -40,6 +41,7 @@ public partial class MainWindow
             CheckpointPanes.Children.Clear();
             displayedGroups = [];
             displayedProject = project;
+            checkpointRangeAnchor = null;
         }
 
         var groups = viewModel.Groups;
@@ -47,6 +49,9 @@ public partial class MainWindow
         if (ReferenceEquals(groups, displayedGroups) || (viewModel.IsLoading && groups.Length == 0))
             return;
 
+        var selectedPaths = SelectedCheckpoints().Select(item => item.RelativePath).ToHashSet(StringComparer.Ordinal);
+        if (viewModel.SelectedCheckpoint is { } current)
+            selectedPaths.Add(current.RelativePath);
         displayedGroups = groups;
         synchronizingCheckpointSelection = true;
         try
@@ -72,17 +77,107 @@ public partial class MainWindow
                 pane.ResizeGrip.DragDelta += (_, args) => ResizeCheckpointPanes(pane, args.VerticalChange);
                 CheckpointPanes.Children.Insert(index, pane);
             }
+
+            foreach (var list in CheckpointLists())
+            {
+                list.SelectedItems.Clear();
+                foreach (var checkpoint in list.Items.OfType<Checkpoint>().Where(item => selectedPaths.Contains(item.RelativePath)))
+                    list.SelectedItems.Add(checkpoint);
+            }
         }
         finally { synchronizingCheckpointSelection = false; }
-        SynchronizeCheckpointSelection();
+        UpdateActiveCheckpoint(viewModel.SelectedCheckpoint);
         ArrangeCheckpointPanes();
     }
 
     private void SelectCheckpoint(object sender, SelectionChangedEventArgs e)
     {
-        if (!synchronizingCheckpointSelection && viewModel.Groups.Length > 0 &&
-            sender is ListBox { SelectedItem: Checkpoint checkpoint })
-            viewModel.SelectCheckpoint(checkpoint);
+        if (synchronizingCheckpointSelection || viewModel.Groups.Length == 0 || sender is not ListBox list)
+            return;
+
+        var recent = e.AddedItems.OfType<Checkpoint>().LastOrDefault();
+        if (recent is not null && !Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        {
+            synchronizingCheckpointSelection = true;
+            try
+            {
+                foreach (var other in CheckpointLists().Where(other => other != list))
+                    other.SelectedItems.Clear();
+            }
+            finally { synchronizingCheckpointSelection = false; }
+        }
+
+        if (recent is not null && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+            checkpointRangeAnchor = recent.RelativePath;
+        UpdateActiveCheckpoint(recent);
+    }
+
+    private IEnumerable<ListBox> CheckpointLists() => CheckpointPanes.Children.OfType<CheckpointPane>().Select(pane => pane.CheckpointList);
+
+    private Checkpoint[] SelectedCheckpoints() => CheckpointLists().SelectMany(list => list.SelectedItems.OfType<Checkpoint>()).ToArray();
+
+    private void SelectCheckpointItems(ListBox list, Checkpoint checkpoint, ModifierKeys modifiers)
+    {
+        int checkpointIndex = list.Items.IndexOf(checkpoint);
+        if (checkpointIndex < 0)
+            return;
+
+        bool extend = modifiers.HasFlag(ModifierKeys.Control);
+        int anchor = -1;
+        if (modifiers.HasFlag(ModifierKeys.Shift) && checkpointRangeAnchor is not null)
+        {
+            for (int index = 0; index < list.Items.Count; index++)
+            {
+                if (list.Items[index] is Checkpoint item && item.RelativePath == checkpointRangeAnchor)
+                {
+                    anchor = index;
+                    break;
+                }
+            }
+        }
+
+        synchronizingCheckpointSelection = true;
+        try
+        {
+            if (!extend)
+            {
+                foreach (var other in CheckpointLists())
+                    other.SelectedItems.Clear();
+            }
+
+            if (anchor >= 0)
+            {
+                for (int itemIndex = Math.Min(checkpointIndex, anchor); itemIndex <= Math.Max(checkpointIndex, anchor); itemIndex++)
+                {
+                    var item = list.Items[itemIndex];
+                    if (!list.SelectedItems.Contains(item))
+                        list.SelectedItems.Add(item);
+                }
+            }
+            else
+            {
+                checkpointRangeAnchor = checkpoint.RelativePath;
+                if (extend && list.SelectedItems.Contains(checkpoint))
+                    list.SelectedItems.Remove(checkpoint);
+                else
+                    list.SelectedItems.Add(checkpoint);
+            }
+        }
+        finally { synchronizingCheckpointSelection = false; }
+        UpdateActiveCheckpoint(checkpoint);
+    }
+
+    private void UpdateActiveCheckpoint(Checkpoint? preferred)
+    {
+        var selection = SelectedCheckpoints();
+        var active = selection.FirstOrDefault(item => item.Equals(preferred)) ??
+            selection.FirstOrDefault(item => item.Equals(viewModel.SelectedCheckpoint)) ?? selection.LastOrDefault();
+        if (Equals(active, viewModel.SelectedCheckpoint))
+            return;
+        if (active is null)
+            viewModel.ClearCheckpointSelection();
+        else
+            viewModel.SelectCheckpoint(active);
     }
 
     private void NavigateCheckpointPanes(object sender, KeyEventArgs e)
@@ -108,10 +203,12 @@ public partial class MainWindow
             if (!pane.IsExpanded || !target.HasItems || target.Height == 0)
                 continue;
 
-            target.SelectedIndex = down ? 0 : target.Items.Count - 1;
-            target.ScrollIntoView(target.SelectedItem);
+            int targetIndex = down ? 0 : target.Items.Count - 1;
+            var checkpoint = (Checkpoint)target.Items[targetIndex];
+            SelectCheckpointItems(target, checkpoint, ModifierKeys.None);
+            target.ScrollIntoView(checkpoint);
             target.UpdateLayout();
-            if (target.ItemContainerGenerator.ContainerFromIndex(target.SelectedIndex) is ListBoxItem container)
+            if (target.ItemContainerGenerator.ContainerFromIndex(targetIndex) is ListBoxItem container)
                 container.Focus();
             else
                 target.Focus();
@@ -126,9 +223,13 @@ public partial class MainWindow
         try
         {
             var selected = viewModel.SelectedCheckpoint;
-            foreach (CheckpointPane pane in CheckpointPanes.Children)
-                pane.CheckpointList.SelectedItem = selected is not null && pane.CheckpointList.Items.Contains(selected)
-                    ? selected : null;
+            foreach (var list in CheckpointLists())
+            {
+                if (selected is null)
+                    list.SelectedItems.Clear();
+                else if (list.Items.Contains(selected) && !list.SelectedItems.Contains(selected))
+                    list.SelectedItems.Add(selected);
+            }
         }
         finally { synchronizingCheckpointSelection = false; }
     }
@@ -206,6 +307,14 @@ public partial class MainWindow
                 return pane;
             element = element is Visual ? VisualTreeHelper.GetParent(element) : LogicalTreeHelper.GetParent(element);
         }
+        return null;
+    }
+
+    private static (ListBox List, ListBoxItem Row, Checkpoint Checkpoint)? FindCheckpointRow(object source)
+    {
+        if (source is DependencyObject element && FindCheckpointPane(source) is { CheckpointList: var list } &&
+            ItemsControl.ContainerFromElement(list, element) is ListBoxItem { DataContext: Checkpoint checkpoint } row)
+            return (list, row, checkpoint);
         return null;
     }
 

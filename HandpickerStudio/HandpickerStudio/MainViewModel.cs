@@ -161,6 +161,13 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         UpdateGallery();
     }
 
+    public void ClearCheckpointSelection()
+    {
+        selectedCheckpoint = null;
+        showingUnresolved = false;
+        UpdateGallery();
+    }
+
     public void ChangeGalleryView(GalleryLayout layout)
     {
         if (GalleryView == layout)

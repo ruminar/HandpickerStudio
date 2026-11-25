@@ -13,6 +13,7 @@ public partial class MainWindow
     private bool operationRunning;
     private Point checkpointDragOrigin;
     private Checkpoint? draggedCheckpoint;
+    private bool deferCheckpointClick;
 
     internal static bool IsOperationError(Exception error) => error is IOException or UnauthorizedAccessException or
         InvalidDataException or InvalidOperationException or JsonException or COMException or FileFormatException or
@@ -94,9 +95,12 @@ public partial class MainWindow
 
     private void CheckpointMenuTarget(object sender, MouseButtonEventArgs e)
     {
-        if (FindCheckpointPane(e.OriginalSource) is { } pane && e.OriginalSource is DependencyObject source &&
-            ItemsControl.ContainerFromElement(pane.CheckpointList, source) is ListBoxItem item)
-            item.IsSelected = true;
+        if (FindCheckpointRow(e.OriginalSource) is not { } hit)
+            return;
+        if (hit.Row.IsSelected)
+            UpdateActiveCheckpoint(hit.Checkpoint);
+        else
+            SelectCheckpointItems(hit.List, hit.Checkpoint, ModifierKeys.None);
     }
 
     private void PrepareCheckpointMenu(object sender, ContextMenuEventArgs e)
@@ -108,28 +112,57 @@ public partial class MainWindow
         }
 
         var checkpoint = viewModel.SelectedCheckpoint;
+        var selection = SelectedCheckpoints();
         RatingMenu.Items.Clear();
-        RatingMenu.IsEnabled = checkpoint is not null;
-        DisposeMenu.IsEnabled = checkpoint is not null && viewModel.Groups.Any(group =>
+        RatingMenu.IsEnabled = selection.Length > 0;
+        DisposeMenu.IsEnabled = selection.Length == 1 && checkpoint is not null && viewModel.Groups.Any(group =>
             group.Rating == Rating.Delete && group.Items.Contains(checkpoint));
         foreach (var group in viewModel.Groups.Where(group => group.Rating != Rating.Unavailable))
         {
             var item = new MenuItem { Header = group.Name };
-            item.Click += async (_, _) =>
-            {
-                if (checkpoint is not null)
-                    await ChangeRating(checkpoint, group.Rating);
-            };
+            item.Click += async (_, _) => await ChangeCheckpointRatings(selection, group.Rating);
             RatingMenu.Items.Add(item);
         }
     }
 
     private void BeginCheckpointDrag(object sender, MouseButtonEventArgs e)
     {
+        draggedCheckpoint = null;
+        deferCheckpointClick = false;
+        if (operationRunning || viewModel.IsLoading || FindCheckpointRow(e.OriginalSource) is not { } hit)
+            return;
+
         checkpointDragOrigin = e.GetPosition(CheckpointPanes);
-        draggedCheckpoint = FindCheckpointPane(e.OriginalSource) is { } pane && e.OriginalSource is DependencyObject source &&
-            ItemsControl.ContainerFromElement(pane.CheckpointList, source) is ListBoxItem { DataContext: Checkpoint checkpoint }
-            ? checkpoint : null;
+        draggedCheckpoint = hit.Checkpoint;
+        var modifiers = Keyboard.Modifiers;
+        // A plain press on a selected row keeps the group intact until it becomes a click or drag.
+        deferCheckpointClick = modifiers == ModifierKeys.None && hit.Row.IsSelected && SelectedCheckpoints().Length > 1;
+        if (!deferCheckpointClick)
+        {
+            SelectCheckpointItems(hit.List, hit.Checkpoint, modifiers);
+            if (hit.Row.IsSelected)
+                hit.Row.Focus();
+        }
+        e.Handled = true;
+    }
+
+    private void FinishCheckpointClick(object sender, MouseButtonEventArgs e)
+    {
+        if (deferCheckpointClick && !operationRunning && !viewModel.IsLoading &&
+            FindCheckpointRow(e.OriginalSource) is { } hit && Equals(hit.Checkpoint, draggedCheckpoint))
+        {
+            SelectCheckpointItems(hit.List, hit.Checkpoint, ModifierKeys.None);
+            hit.Row.Focus();
+            e.Handled = true;
+        }
+        deferCheckpointClick = false;
+        draggedCheckpoint = null;
+    }
+
+    private void CancelCheckpointPress(object sender, MouseEventArgs e)
+    {
+        draggedCheckpoint = null;
+        deferCheckpointClick = false;
     }
 
     private void TrackCheckpointDrag(object sender, MouseEventArgs e)
@@ -142,8 +175,14 @@ public partial class MainWindow
             Math.Abs(position.Y - checkpointDragOrigin.Y) < SystemParameters.MinimumVerticalDragDistance)
             return;
 
+        var selection = SelectedCheckpoints();
         draggedCheckpoint = null;
-        try { DragDrop.DoDragDrop(CheckpointPanes, new DataObject(CheckpointDragFormat, checkpoint), DragDropEffects.Move); }
+        deferCheckpointClick = false;
+        if (!selection.Contains(checkpoint))
+            return;
+
+        UpdateActiveCheckpoint(checkpoint);
+        try { DragDrop.DoDragDrop(CheckpointPanes, new DataObject(CheckpointDragFormat, selection), DragDropEffects.Move); }
         finally { HighlightDropPane(null); }
     }
 
@@ -163,24 +202,34 @@ public partial class MainWindow
         e.Handled = true;
         var target = CheckpointDropTarget(e);
         e.Effects = target is not null ? DragDropEffects.Move : DragDropEffects.None;
-        if (target is not null && e.Data.GetData(CheckpointDragFormat) is Checkpoint checkpoint &&
-            !target.CheckpointList.Items.Contains(checkpoint))
-            await ChangeRating(checkpoint, target.Rating);
+        if (target is not null && e.Data.GetData(CheckpointDragFormat) is Checkpoint[] selection)
+        {
+            var changes = selection.Where(checkpoint => !target.CheckpointList.Items.Contains(checkpoint)).ToArray();
+            await ChangeCheckpointRatings(changes, target.Rating);
+        }
     }
 
     private CheckpointPane? CheckpointDropTarget(DragEventArgs e) =>
         !operationRunning && !viewModel.IsLoading && e.Data.GetDataPresent(CheckpointDragFormat) &&
         FindCheckpointPane(e.OriginalSource) is { Rating: not Rating.Unavailable } pane ? pane : null;
 
-    private Task ChangeRating(Checkpoint checkpoint, Rating rating) => RunOperation("評価を変更", () =>
+    private Task ChangeCheckpointRatings(Checkpoint[] selection, Rating rating)
     {
-        using var suite = new SuiteEvaluation(checkpoint.Project);
-        return suite.ChangeRating(checkpoint, rating);
-    }, keepGallery: true);
+        if (selection.Length == 0 || viewModel.SelectedProject is not { } project ||
+            selection.Any(checkpoint => checkpoint.Project.Id != project.Id))
+            return Task.CompletedTask;
+
+        return RunOperation("評価を変更", () =>
+        {
+            using var suite = new SuiteEvaluation(project);
+            return suite.ChangeRatings(selection, rating);
+        }, keepGallery: true);
+    }
 
     private async void DisposeCheckpoint(object sender, RoutedEventArgs e)
     {
-        if (viewModel.SelectedCheckpoint is not { } checkpoint || operationRunning || viewModel.IsLoading)
+        if (viewModel.SelectedCheckpoint is not { } checkpoint || SelectedCheckpoints().Length != 1 ||
+            operationRunning || viewModel.IsLoading)
             return;
 
         FileStamp stamp;
