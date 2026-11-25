@@ -11,15 +11,18 @@ public partial class ProjectEditorWindow : Window
     private readonly Guid projectId;
     private readonly ObservableCollection<RootDraft> roots;
     private readonly Project? originalProject;
+    private readonly MainViewModel viewModel;
     private CancellationTokenSource? pendingDetection;
     private ComfyUiInstallation? installation;
     private string preferredSuite = "";
     private bool initialized;
+    private bool thumbnailRegistrationRunning;
 
-    internal ProjectEditorWindow(Project? project, bool showRoots)
+    internal ProjectEditorWindow(Project? project, bool showRoots, MainViewModel viewModel)
     {
         InitializeComponent();
         originalProject = project;
+        this.viewModel = viewModel;
         projectId = project?.Id ?? Guid.NewGuid();
         Title = project is null ? "プロジェクトを登録" : "プロジェクト設定";
         NameInput.Text = project?.Name ?? "";
@@ -29,6 +32,8 @@ public partial class ProjectEditorWindow : Window
         CacheInput.Text = project?.CachePath ?? "";
         roots = new((project?.Roots ?? []).Select(root => new RootDraft(root)));
         RootsGrid.ItemsSource = roots;
+        RegisterThumbnailsButton.DataContext = viewModel;
+        ThumbnailTab.Visibility = project is null ? Visibility.Collapsed : Visibility.Visible;
         if (showRoots)
             EditorTabs.SelectedItem = RootsTab;
         AdvancedSettings.IsExpanded = project is not null && ComfyUiInput.Text.Length == 0;
@@ -44,9 +49,29 @@ public partial class ProjectEditorWindow : Window
             initialized = false;
             pendingDetection?.Cancel();
         };
+        Closing += (_, args) => args.Cancel |= thumbnailRegistrationRunning;
     }
 
     internal Project? Result { get; private set; }
+
+    private async void RegisterMissingThumbnails(object sender, RoutedEventArgs e)
+    {
+        if (thumbnailRegistrationRunning || !SaveButton.IsEnabled || !viewModel.CanRegisterMissingThumbnails ||
+            originalProject is not { } project || viewModel.SelectedProject?.Id != project.Id)
+            return;
+
+        thumbnailRegistrationRunning = true;
+        IsEnabled = false;
+        ThumbnailReport.Visibility = Visibility.Visible;
+        ThumbnailReport.Text = "登録中…";
+        try { ThumbnailReport.Text = await viewModel.RegisterMissingThumbnailsAsync(project); }
+        catch (Exception error) when (MainWindow.IsOperationError(error)) { ThumbnailReport.Text = error.Message; }
+        finally
+        {
+            thumbnailRegistrationRunning = false;
+            IsEnabled = true;
+        }
+    }
 
     private async void Save(object sender, RoutedEventArgs e)
     {

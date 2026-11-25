@@ -44,7 +44,7 @@ public partial class MainWindow : Window
 
     private async Task EditProjectAsync(Project? project, bool showRoots = false)
     {
-        var editor = new ProjectEditorWindow(project, showRoots) { Owner = this };
+        var editor = new ProjectEditorWindow(project, showRoots, viewModel) { Owner = this };
         if (editor.ShowDialog() == true && editor.Result is { } edited)
             await viewModel.SetProjectAsync(edited);
     }

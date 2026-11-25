@@ -84,6 +84,18 @@
                     </DataGrid>
                 </DockPanel>
             </TabItem>
+            <TabItem x:Name="ThumbnailTab" Header="サムネイル">
+                <DockPanel Margin="14">
+                    <StackPanel DockPanel.Dock="Top">
+                        <TextBlock Text="保存済みのプロジェクト設定で、未設定の代表サムネイルを補います。サムネイルはその場で保存します。"
+                                   TextWrapping="Wrap" />
+                        <Button x:Name="RegisterThumbnailsButton" Content="サムネイル一括登録" Click="RegisterMissingThumbnails"
+                                IsEnabled="{Binding CanRegisterMissingThumbnails}" HorizontalAlignment="Left" Margin="0,12,0,12" />
+                    </StackPanel>
+                    <TextBox x:Name="ThumbnailReport" IsReadOnly="True" TextWrapping="Wrap" Visibility="Collapsed"
+                             VerticalScrollBarVisibility="Auto" AutomationProperties.Name="サムネイル一括登録の結果" />
+                </DockPanel>
+            </TabItem>
         </TabControl>
     </DockPanel>
 </Window>

@@ -13,6 +13,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
     private Project? selectedProject;
     private Checkpoint? selectedCheckpoint;
     private ImageEntry[] allImages = [];
+    private bool hasScannedImages;
     private HeldLabel[] observedHolds = [];
     private bool showingUnresolved;
     private bool updatingProjects;
@@ -36,6 +37,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
     public int GalleryViewIndex => (int)GalleryView;
     public int TileSize { get; private set; } = WorkspaceSettings.DefaultTileSize;
     public bool IsLoading { get; private set; }
+    public bool CanRegisterMissingThumbnails => !IsLoading && hasScannedImages && Groups.Any(group => group.Items.Length > 0);
     public CheckpointGroup[] Groups { get; private set; } = [];
     public RootStatus[] Roots { get; private set; } = [];
     public ImageEntry[] Images { get; private set; } = [];
@@ -212,6 +214,13 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    internal Task<string> RegisterMissingThumbnailsAsync(Project project)
+    {
+        var checkpoints = Groups.SelectMany(group => group.Items).ToArray();
+        var images = allImages;
+        return Task.Run(() => ImageOperations.RegisterMissingThumbnails(project, checkpoints, images));
+    }
+
     public async Task ReloadAsync(bool keepGallery = false)
     {
         currentLoad?.Cancel();
@@ -223,6 +232,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         string? selectedPath = selectedCheckpoint?.RelativePath;
 
         Groups = [];
+        hasScannedImages = false;
         if (!keepGallery)
             allImages = [];
         Roots = project?.Roots.Select(root => new RootStatus(root, root.Enabled ? "確認中…" : "無効・接続未確認")).ToArray() ?? [];
@@ -257,6 +267,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
             var scan = await Task.Run(() => CatalogService.ReadImages(project, catalog, heldLabels, token), token);
             token.ThrowIfCancellationRequested();
             allImages = scan.Images;
+            hasScannedImages = true;
             Roots = scan.Roots;
             scanWarnings = catalog.Warnings.Concat(scan.Warnings).ToArray();
             NotifyScan();
@@ -278,6 +289,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
                 currentLoad = null;
                 IsLoading = false;
                 Changed(nameof(IsLoading));
+                Changed(nameof(CanRegisterMissingThumbnails));
                 Changed(nameof(StatusText));
                 Changed(nameof(EmptyGalleryMessage));
             }
@@ -393,6 +405,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         Changed(nameof(Groups));
         Changed(nameof(Roots));
         Changed(nameof(IsLoading));
+        Changed(nameof(CanRegisterMissingThumbnails));
         Changed(nameof(HasCollisions));
         Changed(nameof(UnresolvedLabel));
         NotifyWarnings();

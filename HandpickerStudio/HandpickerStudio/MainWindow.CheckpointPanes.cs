@@ -70,6 +70,7 @@ public partial class MainWindow
                 }
 
                 pane = new CheckpointPane(group);
+                pane.SetDisplayedCheckpoint(viewModel.SelectedCheckpoint);
                 pane.HeaderButton.Checked += (_, _) => ArrangeCheckpointPanes();
                 pane.HeaderButton.Unchecked += (_, _) => ArrangeCheckpointPanes();
                 pane.CheckpointList.SelectionChanged += SelectCheckpoint;
@@ -223,8 +224,10 @@ public partial class MainWindow
         try
         {
             var selected = viewModel.SelectedCheckpoint;
-            foreach (var list in CheckpointLists())
+            foreach (var pane in CheckpointPanes.Children.OfType<CheckpointPane>())
             {
+                pane.SetDisplayedCheckpoint(selected);
+                var list = pane.CheckpointList;
                 if (selected is null)
                     list.SelectedItems.Clear();
                 else if (list.Items.Contains(selected) && !list.SelectedItems.Contains(selected))

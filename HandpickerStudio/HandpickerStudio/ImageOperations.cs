@@ -74,12 +74,82 @@ internal static class ImageOperations
         if (source.Image.CheckpointPath != checkpoint.RelativePath)
             throw new IOException("選んだ画像の所属を確認してください。");
         using var model = VerifiedFile.Open(checkpoint.FullPath, checkpoint.RootPath);
+        SaveThumbnail(checkpoint, model.Stamp, EncodeThumbnail(source), overwrite: true);
+        return Path.ChangeExtension(checkpoint.FullPath, ".jpg");
+    }
+
+    public static string RegisterMissingThumbnails(Project project, IEnumerable<Checkpoint> checkpoints, IEnumerable<ImageEntry> images)
+    {
+        var byCheckpoint = images.Where(image => image.CheckpointPath is not null && image.Problem is null)
+            .ToLookup(image => image.CheckpointPath, StringComparer.Ordinal);
+        int registered = 0, existing = 0, noImages = 0, ambiguous = 0;
+        List<string> errors = [];
+        foreach (var checkpoint in checkpoints)
+        {
+            if (checkpoint.SharedRelativePath)
+            {
+                ambiguous++;
+                continue;
+            }
+
+            try
+            {
+                if (HasThumbnail(checkpoint))
+                {
+                    existing++;
+                    continue;
+                }
+
+                var candidates = byCheckpoint[checkpoint.RelativePath];
+                if (!candidates.Any())
+                {
+                    noImages++;
+                    continue;
+                }
+
+                using var model = VerifiedFile.Open(checkpoint.FullPath, checkpoint.RootPath);
+                var encoder = EncodeFirstThumbnail(project, candidates);
+                if (SaveThumbnail(checkpoint, model.Stamp, encoder, overwrite: false))
+                    registered++;
+                else
+                    existing++;
+            }
+            catch (Exception error) when (MainWindow.IsOperationError(error))
+            {
+                errors.Add($"{checkpoint.RelativePath}{Environment.NewLine}{error.Message}");
+            }
+        }
+
+        string counts = $"登録 {registered} 件 / 設定済み {existing} 件 / 候補画像なし {noImages} 件 / 参照先の重複 {ambiguous} 件 / 失敗 {errors.Count} 件";
+        return errors.Count == 0 ? counts : counts + Environment.NewLine + Environment.NewLine +
+            string.Join(Environment.NewLine + Environment.NewLine, errors);
+    }
+
+    private static JpegBitmapEncoder EncodeFirstThumbnail(Project project, IEnumerable<ImageEntry> candidates)
+    {
+        Exception? firstError = null;
+        foreach (var image in candidates.OrderByDescending(image => image.FromArchive)
+            .ThenBy(image => image.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(image => image.FullPath, StringComparer.Ordinal))
+        {
+            try { return EncodeThumbnail(Capture(project, image)); }
+            catch (Exception error) when (MainWindow.IsOperationError(error)) { firstError ??= error; }
+        }
+        throw new IOException($"候補画像を読み込めません。{Environment.NewLine}{firstError?.Message}", firstError);
+    }
+
+    private static JpegBitmapEncoder EncodeThumbnail(ImageTarget source)
+    {
         using var file = VerifiedFile.Open(source.Image.FullPath, source.RootPath, source.Stamp);
         using var input = file.OpenStream();
         var bitmap = ImagePreview.Decode(input, 512);
         var encoder = new JpegBitmapEncoder { QualityLevel = 90 };
         encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        return encoder;
+    }
 
+    private static bool SaveThumbnail(Checkpoint checkpoint, FileStamp modelStamp, JpegBitmapEncoder encoder, bool overwrite)
+    {
         string destination = Path.ChangeExtension(checkpoint.FullPath, ".jpg");
         string temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
@@ -89,13 +159,30 @@ internal static class ImageOperations
                 encoder.Save(output);
                 output.Flush(flushToDisk: true);
             }
-            using (VerifiedFile.Open(checkpoint.FullPath, checkpoint.RootPath, model.Stamp)) { }
-            if (File.Exists(destination) && File.GetAttributes(destination).HasFlag(FileAttributes.ReparsePoint))
+            using (VerifiedFile.Open(checkpoint.FullPath, checkpoint.RootPath, modelStamp)) { }
+            if (!overwrite && HasThumbnail(checkpoint))
+                return false;
+            if (overwrite && File.Exists(destination) && File.GetAttributes(destination).HasFlag(FileAttributes.ReparsePoint))
                 throw new IOException("リンクになっている代表サムネイルは置き換えられません。");
-            File.Move(temporary, destination, overwrite: true);
-            return destination;
+            try { File.Move(temporary, destination, overwrite); }
+            catch (IOException) when (!overwrite && Path.Exists(destination)) { return false; }
+            return true;
         }
         finally { RemoveTemporary(temporary); }
+    }
+
+    private static bool HasThumbnail(Checkpoint checkpoint)
+    {
+        foreach (string path in ThumbnailCandidates(checkpoint.FullPath))
+        {
+            try
+            {
+                _ = File.GetAttributes(path);
+                return true;
+            }
+            catch (FileNotFoundException) { }
+        }
+        return false;
     }
 
     public static BitmapSource? ReadThumbnail(Checkpoint checkpoint, CancellationToken token)

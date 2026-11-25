@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("HandpickerStudio")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("0.1.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.1.0+a992c38c18bacb462bfaf58077257df1f9453034")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.1.0+a8f6b2799f58523147e58abd63759b8bc790b991")]
 [assembly: System.Reflection.AssemblyProductAttribute("HandpickerStudio")]
 [assembly: System.Reflection.AssemblyTitleAttribute("HandpickerStudio")]
 [assembly: System.Reflection.AssemblyVersionAttribute("0.1.0.0")]

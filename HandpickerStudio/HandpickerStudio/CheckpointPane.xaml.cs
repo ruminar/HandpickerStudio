@@ -7,6 +7,7 @@ namespace HandpickerStudio;
 public partial class CheckpointPane : UserControl
 {
     private Checkpoint[] items = [];
+    private Checkpoint? displayedCheckpoint;
     private CancellationTokenSource? previewRequest;
     private ToolTip? previewToolTip;
     private FrameworkElement? previewTarget;
@@ -39,6 +40,16 @@ public partial class CheckpointPane : UserControl
 
     internal void ShowDropTarget(bool target) => DropFrame.Visibility = target ? Visibility.Visible : Visibility.Collapsed;
 
+    internal void SetDisplayedCheckpoint(Checkpoint? checkpoint)
+    {
+        displayedCheckpoint = checkpoint;
+        if (previewTarget?.DataContext is Checkpoint hovered && IsDisplayed(hovered))
+            StopCheckpointPreview();
+    }
+
+    private bool IsDisplayed(Checkpoint checkpoint) => displayedCheckpoint is { } displayed &&
+        checkpoint.Project.Id == displayed.Project.Id && checkpoint.RelativePath == displayed.RelativePath;
+
     private async void OpenCheckpointPreview(object sender, RoutedEventArgs e)
     {
         if (sender is not ToolTip
@@ -49,6 +60,9 @@ public partial class CheckpointPane : UserControl
             return;
 
         StopCheckpointPreview();
+        if (IsDisplayed(checkpoint))
+            return;
+
         using var request = new CancellationTokenSource();
         previewRequest = request;
         previewToolTip = tooltip;
