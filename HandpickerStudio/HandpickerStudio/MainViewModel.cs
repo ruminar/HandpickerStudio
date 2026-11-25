@@ -76,7 +76,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    public async Task InitializeAsync()
+    internal MainWindowPlacement? LoadSettings()
     {
         try
         {
@@ -89,6 +89,17 @@ internal sealed class MainViewModel : INotifyPropertyChanged
             Changed(nameof(CanSave));
         }
 
+        return settings.MainWindowPlacement;
+    }
+
+    internal void SavePlacement(MainWindowPlacement placement)
+    {
+        if (settings.MainWindowPlacement != placement)
+            TrySave(settings with { MainWindowPlacement = placement });
+    }
+
+    public async Task InitializeAsync()
+    {
         GalleryView = settings.Layout is { } layout && Enum.IsDefined(layout) ? layout :
             settings.UseTileView ? GalleryLayout.Tiles : GalleryLayout.List;
         TileSize = Math.Clamp(settings.TileSize, WorkspaceSettings.MinimumTileSize, WorkspaceSettings.MaximumTileSize);

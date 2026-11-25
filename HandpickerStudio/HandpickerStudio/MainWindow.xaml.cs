@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 
 namespace HandpickerStudio;
 
@@ -11,12 +12,25 @@ public partial class MainWindow : Window
 {
     private readonly MainViewModel viewModel = new(new SettingsStore(Path.Combine(AppContext.BaseDirectory, "settings.json")));
     private int tileWheelRemainder;
+    private bool wasMaximized;
 
     public MainWindow()
     {
         InitializeComponent();
         DataContext = viewModel;
         viewModel.PropertyChanged += ViewModelChanged;
+    }
+
+    private void RestorePlacement(object? sender, EventArgs e)
+    {
+        if (viewModel.LoadSettings() is { } saved)
+            NativeWindowPlacement.Restore(new WindowInteropHelper(this).Handle, saved);
+    }
+
+    private void RememberWindowState(object? sender, EventArgs e)
+    {
+        if (WindowState != WindowState.Minimized)
+            wasMaximized = WindowState == WindowState.Maximized;
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -27,7 +41,12 @@ public partial class MainWindow : Window
 
     private void OnClosed(object? sender, EventArgs e) => viewModel.Cancel();
 
-    private void OnClosing(object? sender, CancelEventArgs e) => e.Cancel = operationRunning;
+    private void OnClosing(object? sender, CancelEventArgs e)
+    {
+        e.Cancel = operationRunning;
+        if (!e.Cancel && NativeWindowPlacement.TryRead(new WindowInteropHelper(this).Handle, out var placement))
+            viewModel.SavePlacement(placement.Capture(wasMaximized));
+    }
 
     private async void AddProject(object sender, RoutedEventArgs e) => await EditProjectAsync(null);
 

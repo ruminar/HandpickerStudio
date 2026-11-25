@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:HandpickerStudio"
         Style="{StaticResource StudioWindowStyle}" Title="HandpickerStudio" Width="1130" Height="760" MinWidth="790" MinHeight="510"
-        Loaded="OnLoaded" Closing="OnClosing" Closed="OnClosed">
+        SourceInitialized="RestorePlacement" Loaded="OnLoaded" StateChanged="RememberWindowState" Closing="OnClosing" Closed="OnClosed">
     <Window.Resources>
         <DataTemplate x:Key="ImageListTemplate">
             <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="2,4,2,7">

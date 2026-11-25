@@ -24,7 +24,7 @@ internal enum AppearanceTheme { Light, Dark, System }
 internal sealed record WorkspaceSettings(int Version, Project[] Projects, Guid? SelectedProjectId, HeldLabel[] HeldLabels,
     bool UseTileView = false, GalleryLayout? Layout = null, int TileSize = WorkspaceSettings.DefaultTileSize,
     AppearanceTheme Appearance = AppearanceTheme.Light, bool CreateImageCache = false,
-    Guid? PreviewCacheOwner = null, string[]? PreviewCacheRoots = null)
+    Guid? PreviewCacheOwner = null, string[]? PreviewCacheRoots = null, MainWindowPlacement? MainWindowPlacement = null)
 {
     public const int DefaultTileSize = 174;
     public const int MinimumTileSize = 96;

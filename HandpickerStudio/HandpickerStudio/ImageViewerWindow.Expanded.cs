@@ -9,7 +9,7 @@ namespace HandpickerStudio;
 
 public partial class ImageViewerWindow
 {
-    private WindowPlacement? previousPlacement;
+    private NativeWindowPlacement? previousPlacement;
 
     private void ToggleExpandedView(object sender, MouseButtonEventArgs e)
     {
@@ -19,7 +19,7 @@ public partial class ImageViewerWindow
         nint window = new WindowInteropHelper(this).Handle;
         if (previousPlacement is { } original)
         {
-            if (SetWindowPlacement(window, in original))
+            if (original.Apply(window))
                 previousPlacement = null;
             e.Handled = true;
             return;
@@ -28,10 +28,9 @@ public partial class ImageViewerWindow
         if (Preview.Source is not BitmapSource)
             return;
 
-        var placement = new WindowPlacement { Length = Marshal.SizeOf<WindowPlacement>() };
         const uint MonitorDefaultToNearest = 2;
         nint monitor = MonitorFromWindow(window, MonitorDefaultToNearest);
-        if (monitor == 0 || !GetWindowPlacement(window, ref placement))
+        if (monitor == 0 || !NativeWindowPlacement.TryRead(window, out var placement))
             return;
 
         WindowState = WindowState.Normal;
@@ -39,7 +38,7 @@ public partial class ImageViewerWindow
         if (FitExpandedView(monitor))
             previousPlacement = placement;
         else
-            SetWindowPlacement(window, in placement);
+            placement.Apply(window);
         e.Handled = true;
     }
 
@@ -76,27 +75,11 @@ public partial class ImageViewerWindow
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct NativeRect
-    {
-        public int Left, Top, Right, Bottom;
-        public readonly int Width => Right - Left;
-        public readonly int Height => Bottom - Top;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
     private struct MonitorInfo
     {
         public int Size;
         public NativeRect MonitorArea, WorkArea;
         public uint Flags;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct WindowPlacement
-    {
-        public int Length, Flags, ShowCommand;
-        public int MinX, MinY, MaxX, MaxY;
-        public NativeRect RestorePosition;
     }
 
     [DllImport("user32.dll")]
@@ -109,14 +92,6 @@ public partial class ImageViewerWindow
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetWindowRect(nint window, out NativeRect rect);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetWindowPlacement(nint window, ref WindowPlacement placement);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SetWindowPlacement(nint window, in WindowPlacement placement);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
