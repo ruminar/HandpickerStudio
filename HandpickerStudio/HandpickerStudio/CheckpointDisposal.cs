@@ -16,7 +16,7 @@ internal static class CheckpointDisposal
     }
 
     public static string? Execute(Checkpoint checkpoint, FileStamp expected, Project[] projects, HeldLabel[] holds,
-        PreviewCache.RemovalBatch? cleanup)
+        PreviewCache.RemovalBatch? cleanup, Func<string, string, bool> confirmCopy)
     {
         var project = checkpoint.Project;
         var catalog = CatalogService.ReadCatalog(projects, project, CancellationToken.None);
@@ -32,9 +32,9 @@ internal static class CheckpointDisposal
             var root = project.Roots.Single(item => item.Id == image.Root.Id);
             var source = ImageOperations.Capture(project, image);
             if (cleanup is null)
-                ImageOperations.Move(source, checkpoint, root);
+                ImageOperations.Move(source, checkpoint, root, confirmCopy);
             else
-                cleanup.AfterRemoving(image.FullPath, () => ImageOperations.Move(source, checkpoint, root));
+                cleanup.AfterRemoving(image.FullPath, () => ImageOperations.Move(source, checkpoint, root, confirmCopy));
         }
 
         // A fresh scan covers new outputs from other processes and directories that changed during the moves.

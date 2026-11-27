@@ -89,8 +89,9 @@ public partial class ProjectEditorWindow : Window
         try
         {
             var imageRoots = roots.Select(root => root.ToSettings()).ToArray();
+            Project edited;
             if (string.IsNullOrWhiteSpace(ComfyUiInput.Text))
-                Result = WorkspacePaths.Normalize(new Project(projectId, NameInput.Text, CheckpointInput.Text,
+                edited = WorkspacePaths.Normalize(new Project(projectId, NameInput.Text, CheckpointInput.Text,
                     EvaluationInput.Text, CacheInput.Text, imageRoots));
             else
             {
@@ -100,24 +101,28 @@ public partial class ProjectEditorWindow : Window
                     originalProject is { } existing && existing.ComfyUiPath.Equals(input, StringComparison.OrdinalIgnoreCase) &&
                     ComfyUiInput.Text.Trim().Equals(input, StringComparison.OrdinalIgnoreCase))
                 {
-                    Result = WorkspacePaths.Normalize(existing with
+                    edited = WorkspacePaths.Normalize(existing with
                     {
                         Name = NameInput.Text, CachePath = CacheInput.Text, Roots = imageRoots
                     });
-                    DialogResult = true;
-                    return;
                 }
-                if (!initialized || installation is not { } detected || detected.SelectedPath != WorkspacePaths.Normalize(ComfyUiInput.Text))
-                    return;
+                else
+                {
+                    if (!initialized || installation is not { } detected || detected.SelectedPath != WorkspacePaths.Normalize(ComfyUiInput.Text))
+                        return;
 
-                var suite = SuitePicker.SelectedItem as DetectedSuite;
-                if (suite is null && detected.Suites.Count(candidate => candidate.HasEvaluation) > 1)
-                    throw new ArgumentException("使用するHandpickerSuiteのデータフォルダーを選択してください。");
-                var modelFolders = detected.Checkpoints;
-                Result = WorkspacePaths.Normalize(new Project(projectId, NameInput.Text, modelFolders[0].Path,
-                    suite?.EvaluationPath ?? "", CacheInput.Text, imageRoots,
-                    detected.SelectedPath, modelFolders));
+                    var suite = SuitePicker.SelectedItem as DetectedSuite;
+                    if (suite is null && detected.Suites.Count(candidate => candidate.HasEvaluation) > 1)
+                        throw new ArgumentException("使用するHandpickerSuiteのデータフォルダーを選択してください。");
+                    var modelFolders = detected.Checkpoints;
+                    edited = WorkspacePaths.Normalize(new Project(projectId, NameInput.Text, modelFolders[0].Path,
+                        suite?.EvaluationPath ?? "", CacheInput.Text, imageRoots,
+                        detected.SelectedPath, modelFolders));
+                }
             }
+            if (!await ConfirmArchiveLocationsAsync(edited))
+                return;
+            Result = edited;
             DialogResult = true;
         }
         catch (Exception exception) when (MainWindow.IsOperationError(exception))
@@ -125,6 +130,36 @@ public partial class ProjectEditorWindow : Window
             ErrorText.Text = exception.Message;
         }
         finally { SaveButton.IsEnabled = true; }
+    }
+
+    private async Task<bool> ConfirmArchiveLocationsAsync(Project edited)
+    {
+        var previous = (originalProject?.Roots ?? []).ToDictionary(root => root.Id);
+        var changed = edited.Roots.Where(root => root.Enabled &&
+            (!previous.TryGetValue(root.Id, out var before) || !before.Enabled ||
+             !string.Equals(root.OutputPath, before.OutputPath, StringComparison.OrdinalIgnoreCase) ||
+             !string.Equals(root.ArchivePath, before.ArchivePath, StringComparison.OrdinalIgnoreCase))).ToArray();
+        if (changed.Length == 0)
+            return true;
+
+        IsEnabled = false;
+        ImageRoot[] warnings;
+        try
+        {
+            warnings = await Task.Run(() => changed.Where(root =>
+                ArchiveDirectory.MayRequireCopy(root.OutputPath, ArchiveDirectory.GetPath(edited.Id, root))).ToArray());
+        }
+        finally { IsEnabled = true; }
+        if (!initialized)
+            return false;
+        if (warnings.Length == 0)
+            return true;
+
+        string paths = string.Join(Environment.NewLine + Environment.NewLine, warnings.Select(root =>
+            $"{root.Name}{Environment.NewLine}{root.OutputPath}{Environment.NewLine}→ {root.ArchivePath}"));
+        return MessageBox.Show(this, "別のドライブやネットワーク共有への移動では、コピーの完了を確認してから元画像を削除します。" +
+            $"{Environment.NewLine}この参照ルート設定を保存しますか？{Environment.NewLine}{Environment.NewLine}{paths}",
+            "Archiveの保存先を確認", MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel) == MessageBoxResult.OK;
     }
 
     private async void Detect(object sender, RoutedEventArgs e) => await DetectInstallationAsync();
@@ -273,7 +308,7 @@ public partial class ProjectEditorWindow : Window
         if (selectArchive)
             root.ArchivePath = selected;
         else
-            root.OutputPath = selected;
+            root.SelectOutput(selected);
         RootsGrid.Items.Refresh();
         RootsGrid.SelectedItem = root;
         ErrorText.Text = "";
@@ -303,6 +338,24 @@ public partial class ProjectEditorWindow : Window
         public string OutputPath { get; set; }
         public string ArchivePath { get; set; }
         public bool Enabled { get; set; }
-        internal ImageRoot ToSettings() => new(id, Name, OutputPath, ArchivePath, Enabled);
+
+        internal void SelectOutput(string path)
+        {
+            OutputPath = path;
+            if (string.IsNullOrWhiteSpace(ArchivePath))
+                ArchivePath = SuggestArchivePath(path);
+        }
+
+        internal ImageRoot ToSettings() => new(id, Name, OutputPath,
+            string.IsNullOrWhiteSpace(ArchivePath) ? SuggestArchivePath(OutputPath) : ArchivePath, Enabled);
+
+        private static string SuggestArchivePath(string outputPath)
+        {
+            if (!Path.IsPathFullyQualified(outputPath.Trim()))
+                return "";
+
+            string output = WorkspacePaths.Normalize(outputPath);
+            return Path.GetDirectoryName(output) is null ? "" : output + "_archive";
+        }
     }
 }

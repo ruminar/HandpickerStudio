@@ -69,7 +69,7 @@ internal static class ImageOperations
         }).ToArray();
     }
 
-    public static void Move(ImageTarget source, Checkpoint checkpoint, ImageRoot destinationRoot)
+    public static void Move(ImageTarget source, Checkpoint checkpoint, ImageRoot destinationRoot, Func<string, string, bool> confirmCopy)
     {
         string checkpointFolder = PrepareArchive(checkpoint, destinationRoot);
         string relativePath = source.Image.RelativePath;
@@ -87,6 +87,8 @@ internal static class ImageOperations
         using var file = VerifiedFile.Open(source.Image.FullPath, source.RootPath, source.Stamp, forMove: true);
         if (file.TryRename(destination))
             return;
+        if (!confirmCopy(source.Image.FullPath, destination))
+            throw new IOException("コピーをキャンセルしました。元画像は保存されています。");
 
         string temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try

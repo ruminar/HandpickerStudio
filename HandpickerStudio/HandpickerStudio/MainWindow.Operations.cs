@@ -84,19 +84,20 @@ public partial class MainWindow
         if (dialog.ShowDialog() == true && dialog.Destination is { } destination && dialog.DestinationRoot is { } root)
         {
             var cleanup = BeginCacheCleanup();
-            await RunOperation("画像を移動", () => MoveImagesToProject(project, destination, root, dialog.Confirmed, cleanup),
+            var confirmCopy = ConfirmCopyOnce();
+            await RunOperation("画像を移動", () => MoveImagesToProject(project, destination, root, dialog.Confirmed, cleanup, confirmCopy),
                 cleanup: cleanup);
         }
     }
 
     private static string? MoveImagesToProject(Project source, Project destination, ImageRoot root, ImageMoveMatch[] confirmed,
-        PreviewCache.RemovalBatch? cleanup)
+        PreviewCache.RemovalBatch? cleanup, Func<string, string, bool> confirmCopy)
     {
         var matches = ImageOperations.RecheckProjectMove(destination, confirmed, CancellationToken.None);
         var targets = matches.Where(match => match.Checkpoint is not null)
             .ToDictionary(match => match.Image.FullPath, match => match.Checkpoint!, StringComparer.OrdinalIgnoreCase);
         var moving = matches.Where(match => match.Checkpoint is not null).Select(match => match.Image).ToArray();
-        string? result = ProcessImages(source, moving, image => ImageOperations.Move(image, targets[image.Image.FullPath], root), cleanup);
+        string? result = ProcessImages(source, moving, image => ImageOperations.Move(image, targets[image.Image.FullPath], root, confirmCopy), cleanup);
         var skipped = matches.Where(match => match.Checkpoint is null).ToArray();
         if (skipped.Length == 0)
             return result;
@@ -299,7 +300,8 @@ public partial class MainWindow
         Project[] projects = viewModel.Projects;
         HeldLabel[] holds = viewModel.HeldLabels;
         var cleanup = BeginCacheCleanup();
-        await RunOperation("Checkpointを廃棄", () => CheckpointDisposal.Execute(checkpoint, stamp, projects, holds, cleanup),
+        var confirmCopy = ConfirmCopyOnce();
+        await RunOperation("Checkpointを廃棄", () => CheckpointDisposal.Execute(checkpoint, stamp, projects, holds, cleanup, confirmCopy),
             shell: true, cleanup: cleanup);
     }
 
@@ -313,6 +315,19 @@ public partial class MainWindow
     }
 
     private PreviewCache.RemovalBatch? BeginCacheCleanup() => viewModel.GalleryCache is { } cache ? new(cache) : null;
+
+    private Func<string, string, bool> ConfirmCopyOnce()
+    {
+        bool? approved = null;
+        return (source, destination) =>
+        {
+            approved ??= Dispatcher.Invoke(() => MessageBox.Show(this,
+                "コピーの完了を確認してから元画像を削除します。この操作で必要になるコピーを続けますか？" +
+                $"{Environment.NewLine}{Environment.NewLine}{source}{Environment.NewLine}→ {destination}",
+                "画像をコピーして移動", MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel) == MessageBoxResult.OK);
+            return approved.Value;
+        };
+    }
 
     private async Task RunOperation(string title, Func<string?> action, bool shell = false, bool keepGallery = false, bool reload = true,
         PreviewCache.RemovalBatch? cleanup = null)

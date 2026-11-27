@@ -31,7 +31,27 @@ internal static class ArchiveDirectory
             throw new IOException($"Archiveの管理フォルダーを利用できません。{path}");
     }
 
-    public static string ResolvePath(string path, CancellationToken token = default)
+    public static string ResolvePath(string path, CancellationToken token = default) => ResolvePath(path, token, identifyVolume: false);
+
+    internal static bool MayRequireCopy(string source, string destination)
+    {
+        try
+        {
+            string sourcePath = ResolvePath(source, CancellationToken.None, identifyVolume: true);
+            string destinationPath = ResolvePath(destination, CancellationToken.None, identifyVolume: true);
+            return !SameStorageRoot(sourcePath, destinationPath);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            // When a share is offline, the configured drive/share names are only a hint.
+            return !SameStorageRoot(source, destination);
+        }
+    }
+
+    private static bool SameStorageRoot(string source, string destination) =>
+        string.Equals(Path.GetPathRoot(source), Path.GetPathRoot(destination), StringComparison.OrdinalIgnoreCase);
+
+    private static string ResolvePath(string path, CancellationToken token, bool identifyVolume)
     {
         var missing = new Stack<string>();
         for (DirectoryInfo? directory = new(path); directory is not null; directory = directory.Parent)
@@ -42,7 +62,7 @@ internal static class ArchiveDirectory
                 if (!attributes.HasFlag(FileAttributes.Directory))
                     throw new IOException($"フォルダーではありません。{directory.FullName}");
 
-                return Path.TrimEndingDirectorySeparator(Path.Combine([ResolveExistingPath(directory.FullName), .. missing]));
+                return Path.TrimEndingDirectorySeparator(Path.Combine([ResolveExistingPath(directory.FullName, identifyVolume), .. missing]));
             }
             missing.Push(directory.Name);
         }
@@ -56,28 +76,33 @@ internal static class ArchiveDirectory
         catch (Exception exception) when (exception is DirectoryNotFoundException or FileNotFoundException) { return null; }
     }
 
-    public static string ResolveExistingPath(string path)
+    public static string ResolveExistingPath(string path) => ResolveExistingPath(path, identifyVolume: false);
+
+    private static string ResolveExistingPath(string path, bool identifyVolume)
     {
         const uint OpenDirectory = 0x02000000;
         using var handle = CreateFile(path, 0, FileShare.ReadWrite | FileShare.Delete, IntPtr.Zero, FileMode.Open, OpenDirectory, IntPtr.Zero);
         if (handle.IsInvalid)
             throw ResolutionError(path);
 
-        return ResolveHandlePath(handle, path);
+        const uint volumeNameGuid = 1;
+        // Local mounted volumes have GUID paths. Network shares use the resolved UNC root.
+        return (identifyVolume ? ReadHandlePath(handle, volumeNameGuid) : null) ?? ResolveHandlePath(handle, path);
     }
 
-    public static string ResolveHandlePath(SafeFileHandle handle, string path)
+    public static string ResolveHandlePath(SafeFileHandle handle, string path) =>
+        ReadHandlePath(handle, 0) ?? throw ResolutionError(path);
+
+    private static string? ReadHandlePath(SafeFileHandle handle, uint flags)
     {
         var buffer = new StringBuilder(512);
-        uint length = GetFinalPathNameByHandle(handle, buffer, (uint)buffer.Capacity, 0);
+        uint length = GetFinalPathNameByHandle(handle, buffer, (uint)buffer.Capacity, flags);
         if (length >= buffer.Capacity)
         {
             buffer.EnsureCapacity(checked((int)length + 1));
-            length = GetFinalPathNameByHandle(handle, buffer, (uint)buffer.Capacity, 0);
+            length = GetFinalPathNameByHandle(handle, buffer, (uint)buffer.Capacity, flags);
         }
-        if (length == 0 || length >= buffer.Capacity)
-            throw ResolutionError(path);
-        return buffer.ToString();
+        return length == 0 || length >= buffer.Capacity ? null : buffer.ToString();
     }
 
     private static IOException ResolutionError(string path) =>
