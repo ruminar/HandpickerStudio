@@ -81,7 +81,8 @@ internal static class ArchiveDirectory
     private static string ResolveExistingPath(string path, bool identifyVolume)
     {
         const uint OpenDirectory = 0x02000000;
-        using var handle = CreateFile(path, 0, FileShare.ReadWrite | FileShare.Delete, IntPtr.Zero, FileMode.Open, OpenDirectory, IntPtr.Zero);
+        using var handle = CreateFile(WorkspacePaths.ForNativeFileApi(path), 0, FileShare.ReadWrite | FileShare.Delete,
+            IntPtr.Zero, FileMode.Open, OpenDirectory, IntPtr.Zero);
         if (handle.IsInvalid)
             throw ResolutionError(path);
 

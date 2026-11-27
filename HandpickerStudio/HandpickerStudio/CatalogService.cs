@@ -68,7 +68,7 @@ internal static partial class CatalogService
     [GeneratedRegex("^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ReservedWindowsName();
 
-    public static Catalog ReadCatalog(Project[] projects, Project active, CancellationToken token)
+    public static Catalog ReadCatalog(Project[] projects, Project active, CancellationToken token, bool includeRatings = true)
     {
         List<Checkpoint> checkpoints = [];
         List<string> warnings = [];
@@ -95,7 +95,7 @@ internal static partial class CatalogService
             .Select(item => duplicates.Contains(item.RelativePath) ? item with { SharedRelativePath = true } : item)
             .OrderBy(item => item.RelativePath, CheckpointOrder).ToArray();
         bool isComplete = warnings.Count == 0;
-        var ratings = ReadRatings(active.EvaluationPath, warnings);
+        var ratings = includeRatings ? ReadRatings(active.EvaluationPath, warnings) : null;
         var byRating = activeCheckpoints.ToLookup(item => ratings?.GetValueOrDefault(item.RelativePath, Rating.None) ?? Rating.Unavailable);
         var groups = RatingGroups.Where(group => group.Rating != Rating.Unavailable || byRating.Contains(Rating.Unavailable))
             .Select(group => new CheckpointGroup(group.Label, byRating[group.Rating].ToArray(), group.Rating)).ToArray();
@@ -159,16 +159,18 @@ internal static partial class CatalogService
     private static string ResolveOutputPath(string path, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        try
-        {
-            string resolved = ArchiveDirectory.ResolveExistingPath(path);
-            if (resolved.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
-                resolved = @"\\" + resolved[8..];
-            else if (resolved.StartsWith(@"\\?\", StringComparison.Ordinal) && resolved.Length > 5 && resolved[5] == ':')
-                resolved = resolved[4..];
-            return Path.TrimEndingDirectorySeparator(resolved);
-        }
+        try { return ResolveExistingDirectory(path); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { return path; }
+    }
+
+    internal static string ResolveExistingDirectory(string path)
+    {
+        string resolved = ArchiveDirectory.ResolveExistingPath(path);
+        if (resolved.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+            resolved = @"\\" + resolved[8..];
+        else if (resolved.StartsWith(@"\\?\", StringComparison.Ordinal) && resolved.Length > 5 && resolved[5] == ':')
+            resolved = resolved[4..];
+        return Path.TrimEndingDirectorySeparator(resolved);
     }
 
     private static int CompareCheckpointPaths(string left, string right)
@@ -249,7 +251,8 @@ internal static partial class CatalogService
         return ratings;
     }
 
-    public static ImageScan ReadImages(Project active, Catalog catalog, HeldLabel[] holds, CancellationToken token)
+    public static ImageScan ReadImages(Project active, Catalog catalog, HeldLabel[] holds, CancellationToken token,
+        bool includeArchive = true)
     {
         List<ImageEntry> images = [];
         List<RootStatus> roots = [];
@@ -269,7 +272,8 @@ internal static partial class CatalogService
             var unconfirmed = catalog.UnconfirmedOutputs.Where(path => WorkspacePaths.Overlap(path, outputPath)).ToArray();
             int previousWarnings = warnings.Count;
             bool outputAvailable = DirectoryAvailable(root.OutputPath, error => warnings.Add($"{root.Name}のOutput: {error}"));
-            ReadArchive(active.Id, root, catalog.Checkpoints, images, warnings, outputAvailable, token);
+            if (includeArchive)
+                ReadArchive(active.Id, root, catalog.Checkpoints, images, warnings, outputAvailable, token);
             if (outputAvailable)
             {
                 foreach (string path in EnumerateFiles(root.OutputPath, error => warnings.Add($"{root.Name}のOutput: {error}"), token))

@@ -116,6 +116,8 @@
                             <StackPanel.ContextMenu>
                                 <ContextMenu>
                                     <MenuItem x:Name="RatingMenu" Header="評価を変更" />
+                                    <MenuItem x:Name="ArchiveMenu" Header="アーカイブ化" Click="ArchiveSelectedCheckpoints" />
+                                    <MenuItem x:Name="RestoreArchiveMenu" Header="アーカイブ化解除" Click="RestoreSelectedCheckpoints" />
                                     <MenuItem x:Name="DisposeMenu" Header="Checkpointを廃棄…" Click="DisposeCheckpoint" />
                                     <MenuItem Header="廃棄後処理を再開" Click="ResumeDisposal" />
                                 </ContextMenu>

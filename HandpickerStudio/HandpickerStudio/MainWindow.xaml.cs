@@ -36,7 +36,12 @@ public partial class MainWindow : Window
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         Loaded -= OnLoaded;
-        await viewModel.InitializeAsync();
+        var initialize = viewModel.InitializeAsync();
+        Guid? startupProject = viewModel.SelectedProject?.Id;
+        await initialize;
+        if (IsLoaded && viewModel.SelectedProject is { } project && project.Id == startupProject &&
+            viewModel.GetArchivePreference(project.Id).Automatic)
+            await RunArchiveAsync(project, selection: null, restore: false, automatic: true);
     }
 
     private void OnClosed(object? sender, EventArgs e) => viewModel.Cancel();
@@ -65,7 +70,7 @@ public partial class MainWindow : Window
     {
         var editor = new ProjectEditorWindow(project, showRoots, viewModel) { Owner = this };
         if (editor.ShowDialog() == true && editor.Result is { } edited)
-            await viewModel.SetProjectAsync(edited);
+            await viewModel.SetProjectAsync(edited, editor.AutoArchive);
     }
 
     private async void RemoveProject(object sender, RoutedEventArgs e)

@@ -164,6 +164,7 @@ public partial class MainWindow
         var selection = SelectedCheckpoints();
         RatingMenu.Items.Clear();
         RatingMenu.IsEnabled = selection.Length > 0;
+        ArchiveMenu.IsEnabled = RestoreArchiveMenu.IsEnabled = selection.Length > 0;
         DisposeMenu.IsEnabled = selection.Length == 1 && checkpoint is not null && viewModel.Groups.Any(group =>
             group.Rating == Rating.Delete && group.Items.Contains(checkpoint));
         foreach (var group in viewModel.Groups.Where(group => group.Rating != Rating.Unavailable))
@@ -316,12 +317,14 @@ public partial class MainWindow
 
     private PreviewCache.RemovalBatch? BeginCacheCleanup() => viewModel.GalleryCache is { } cache ? new(cache) : null;
 
-    private Func<string, string, bool> ConfirmCopyOnce()
+    private Func<string, string, bool> ConfirmCopyOnce() => ConfirmCopyOnce(this);
+
+    internal static Func<string, string, bool> ConfirmCopyOnce(Window owner)
     {
         bool? approved = null;
         return (source, destination) =>
         {
-            approved ??= Dispatcher.Invoke(() => MessageBox.Show(this,
+            approved ??= owner.Dispatcher.Invoke(() => MessageBox.Show(owner,
                 "コピーの完了を確認してから元画像を削除します。この操作で必要になるコピーを続けますか？" +
                 $"{Environment.NewLine}{Environment.NewLine}{source}{Environment.NewLine}→ {destination}",
                 "画像をコピーして移動", MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel) == MessageBoxResult.OK);

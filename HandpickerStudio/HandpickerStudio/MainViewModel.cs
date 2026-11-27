@@ -114,12 +114,15 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         await Task.WhenAll(ReloadAsync(), ClearDisabledCacheAsync());
     }
 
-    public async Task<bool> SetProjectAsync(Project project)
+    public async Task<bool> SetProjectAsync(Project project, bool? autoArchive = null)
     {
         Project[] projects = settings.Projects.Any(item => item.Id == project.Id)
             ? settings.Projects.Select(item => item.Id == project.Id ? project : item).ToArray()
             : [.. settings.Projects, project];
-        if (!TrySave(settings with { Projects = projects, SelectedProjectId = project.Id }))
+        var next = settings with { Projects = projects, SelectedProjectId = project.Id };
+        if (autoArchive is { } automatic)
+            next = WithArchivePreference(next, GetArchivePreference(project.Id) with { Automatic = automatic });
+        if (!TrySave(next))
             return false;
 
         if (selectedProject?.Id != project.Id)
@@ -137,7 +140,8 @@ internal sealed class MainViewModel : INotifyPropertyChanged
     {
         Project[] projects = settings.Projects.Where(item => item.Id != project.Id).ToArray();
         Project? next = projects.FirstOrDefault();
-        if (!TrySave(settings with { Projects = projects, SelectedProjectId = next?.Id }))
+        if (!TrySave(settings with { Projects = projects, SelectedProjectId = next?.Id,
+            ArchivePreferences = settings.ArchivePreferences?.Where(item => item.ProjectId != project.Id).ToArray() }))
             return;
 
         selectedCheckpoint = null;
@@ -242,6 +246,19 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         var images = allImages;
         return Task.Run(() => ImageOperations.RegisterMissingThumbnails(project, checkpoints, images));
     }
+
+    internal ArchivePreference GetArchivePreference(Guid projectId) =>
+        settings.ArchivePreferences?.FirstOrDefault(item => item is not null && item.ProjectId == projectId) ?? new(projectId);
+
+    internal bool SaveArchivePreference(ArchivePreference preference) =>
+        GetArchivePreference(preference.ProjectId) == preference || TrySave(WithArchivePreference(settings, preference));
+
+    private static WorkspaceSettings WithArchivePreference(WorkspaceSettings existing, ArchivePreference preference) =>
+        existing with
+        {
+            ArchivePreferences = [.. (existing.ArchivePreferences ?? []).Where(item => item is not null &&
+                item.ProjectId != preference.ProjectId), preference]
+        };
 
     public async Task ReloadAsync(bool keepGallery = false)
     {

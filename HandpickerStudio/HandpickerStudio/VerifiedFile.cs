@@ -24,7 +24,7 @@ internal sealed class VerifiedFile : IDisposable
 
     public static VerifiedFile Open(string path, string root, FileStamp? expected = null, bool forMove = false)
     {
-        var handle = CreateFile(path, forMove ? ReadAccess | DeleteAccess : ReadAccess,
+        var handle = CreateFile(WorkspacePaths.ForNativeFileApi(path), forMove ? ReadAccess | DeleteAccess : ReadAccess,
             forMove ? FileShare.Read : FileShare.ReadWrite | FileShare.Delete, IntPtr.Zero, FileMode.Open, OpenReparsePoint, IntPtr.Zero);
         try
         {
@@ -53,7 +53,7 @@ internal sealed class VerifiedFile : IDisposable
 
     public bool TryRename(string destination)
     {
-        byte[] name = Encoding.Unicode.GetBytes(destination);
+        byte[] name = Encoding.Unicode.GetBytes(WorkspacePaths.ForNativeFileApi(destination));
         int nameOffset = (int)Marshal.OffsetOf<RenameInfo>(nameof(RenameInfo.FirstCharacter));
         int lengthOffset = (int)Marshal.OffsetOf<RenameInfo>(nameof(RenameInfo.NameLength));
         byte[] buffer = new byte[Math.Max(Marshal.SizeOf<RenameInfo>(), nameOffset + name.Length + sizeof(char))];

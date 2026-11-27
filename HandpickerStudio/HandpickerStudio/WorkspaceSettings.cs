@@ -17,6 +17,8 @@ internal sealed record Project(Guid Id, string Name, string CheckpointPath, stri
 
 internal sealed record HeldLabel(string OutputPath, string Label, bool Scoped = false);
 
+internal sealed record ArchivePreference(Guid ProjectId, bool Automatic = false, bool Confirmed = false);
+
 internal enum GalleryLayout { List, Tiles, SimpleTiles }
 
 internal enum AppearanceTheme { Light, Dark, System }
@@ -24,7 +26,8 @@ internal enum AppearanceTheme { Light, Dark, System }
 internal sealed record WorkspaceSettings(int Version, Project[] Projects, Guid? SelectedProjectId, HeldLabel[] HeldLabels,
     bool UseTileView = false, GalleryLayout? Layout = null, int TileSize = WorkspaceSettings.DefaultTileSize,
     AppearanceTheme Appearance = AppearanceTheme.Light, bool CreateImageCache = false,
-    Guid? PreviewCacheOwner = null, string[]? PreviewCacheRoots = null, MainWindowPlacement? MainWindowPlacement = null)
+    Guid? PreviewCacheOwner = null, string[]? PreviewCacheRoots = null, MainWindowPlacement? MainWindowPlacement = null,
+    ArchivePreference[]? ArchivePreferences = null)
 {
     public const int DefaultTileSize = 174;
     public const int MinimumTileSize = 96;
@@ -34,6 +37,13 @@ internal sealed record WorkspaceSettings(int Version, Project[] Projects, Guid? 
 
 internal static class WorkspacePaths
 {
+    internal static string ForNativeFileApi(string path)
+    {
+        if (path.Length < 260 || path.StartsWith(@"\\?\", StringComparison.Ordinal) || path.StartsWith(@"\\.\", StringComparison.Ordinal))
+            return path;
+        return path.StartsWith(@"\\", StringComparison.Ordinal) ? @"\\?\UNC\" + path[2..] : @"\\?\" + path;
+    }
+
     public static string Normalize(string path)
     {
         path = path.Trim();
@@ -124,6 +134,7 @@ internal sealed class SettingsStore(string path)
         if (settings is not { Version: 1, Projects: not null, HeldLabels: not null } ||
             settings.Projects.Any(project => project is null) ||
             settings.Projects.Select(project => project.Id).Distinct().Count() != settings.Projects.Length ||
+            settings.ArchivePreferences?.Any(item => item is null) == true ||
             settings.HeldLabels.Any(hold => hold is null || string.IsNullOrWhiteSpace(hold.Label) ||
                 string.IsNullOrWhiteSpace(hold.OutputPath)))
             throw new InvalidDataException("設定ファイルの形式に対応していません。");

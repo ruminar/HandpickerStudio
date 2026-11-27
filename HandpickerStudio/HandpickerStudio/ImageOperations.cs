@@ -71,23 +71,34 @@ internal static class ImageOperations
 
     public static void Move(ImageTarget source, Checkpoint checkpoint, ImageRoot destinationRoot, Func<string, string, bool> confirmCopy)
     {
+        string destination = PrepareArchiveDestination(source.Image, checkpoint, destinationRoot);
+        using var file = VerifiedFile.Open(source.Image.FullPath, source.RootPath, source.Stamp, forMove: true);
+        MoveFile(file, source.Image.FullPath, destination, confirmCopy);
+    }
+
+    internal static string PrepareArchiveDestination(ImageEntry image, Checkpoint checkpoint, ImageRoot destinationRoot)
+    {
         string checkpointFolder = PrepareArchive(checkpoint, destinationRoot);
-        string relativePath = source.Image.RelativePath;
+        string relativePath = image.RelativePath;
         int slash = relativePath.IndexOf('/');
-        if (source.Image.FromArchive && slash >= 0)
+        if (image.FromArchive && slash >= 0)
             relativePath = relativePath[(slash + 1)..];
 
         string destination = Path.GetFullPath(Path.Combine(checkpointFolder, relativePath));
         if (!WorkspacePaths.Within(destination, checkpointFolder) || destination.Equals(checkpointFolder, StringComparison.OrdinalIgnoreCase))
             throw new IOException("Archiveの保存先が正しくありません。");
-        if (destination.Equals(source.Image.FullPath, StringComparison.OrdinalIgnoreCase))
+        if (destination.Equals(image.FullPath, StringComparison.OrdinalIgnoreCase))
             throw new IOException("画像はすでに移動先にあります。");
         CreateBelow(checkpointFolder, Path.GetDirectoryName(destination)!);
+        return destination;
+    }
 
-        using var file = VerifiedFile.Open(source.Image.FullPath, source.RootPath, source.Stamp, forMove: true);
+    internal static void MoveFile(VerifiedFile file, string sourcePath, string destination, Func<string, string, bool> confirmCopy,
+        Action<FileStamp>? recordCopy = null, bool preserveLastWrite = false)
+    {
         if (file.TryRename(destination))
             return;
-        if (!confirmCopy(source.Image.FullPath, destination))
+        if (!confirmCopy(sourcePath, destination))
             throw new IOException("コピーをキャンセルしました。元画像は保存されています。");
 
         string temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -100,6 +111,13 @@ internal static class ImageOperations
                 output.Flush(flushToDisk: true);
                 if (output.Length != file.Stamp.Length)
                     throw new IOException("コピーした画像のサイズが元画像と一致しません。");
+            }
+            if (preserveLastWrite)
+                File.SetLastWriteTimeUtc(temporary, DateTime.FromFileTimeUtc(file.Stamp.LastWrite));
+            if (recordCopy is not null)
+            {
+                using var copy = VerifiedFile.Open(temporary, Path.GetDirectoryName(destination)!);
+                recordCopy(copy.Stamp);
             }
             File.Move(temporary, destination);
             file.RemoveAfterCopy();
@@ -338,7 +356,7 @@ internal static class ImageOperations
         return folder;
     }
 
-    private static void CreateBelow(string root, string directory)
+    internal static void CreateBelow(string root, string directory)
     {
         string current = root;
         foreach (string segment in Path.GetRelativePath(root, directory).Split(Path.DirectorySeparatorChar))

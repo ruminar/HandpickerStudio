@@ -96,6 +96,26 @@
                              VerticalScrollBarVisibility="Auto" AutomationProperties.Name="サムネイル一括登録の結果" />
                 </DockPanel>
             </TabItem>
+            <TabItem x:Name="ArchiveTab" Header="アーカイブ設定">
+                <DockPanel Margin="14">
+                    <StackPanel DockPanel.Dock="Top">
+                        <TextBlock Text="Outputに混在している前日までの画像を、CheckpointごとのArchiveフォルダーへ移動します。エクスプローラーで必要な成果物を取り出せます。Archiveに残った画像は、元のOutputへ戻せます。"
+                                   TextWrapping="Wrap" />
+                        <CheckBox x:Name="AutoArchiveCheckBox" Content="アプリ起動時に自動でArchiveを実行します" Margin="0,12,0,12" />
+                        <WrapPanel Margin="0,0,0,12">
+                            <Button Content="Archive実行" Click="ArchiveProject" Margin="0,0,8,0" />
+                            <Button Content="Archiveを戻す" Click="RestoreProjectArchive" />
+                        </WrapPanel>
+                        <DockPanel Margin="0,0,0,12">
+                            <Button DockPanel.Dock="Right" Content="Archiveを開く" Click="OpenProjectArchive" Margin="8,0,0,0"
+                                    IsEnabled="{Binding HasItems, ElementName=ArchiveRootPicker}" />
+                            <ComboBox x:Name="ArchiveRootPicker" DisplayMemberPath="Name" AutomationProperties.Name="Archiveを開く参照ルート" />
+                        </DockPanel>
+                    </StackPanel>
+                    <TextBox x:Name="ArchiveReport" IsReadOnly="True" TextWrapping="Wrap" Visibility="Collapsed"
+                             VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Archive処理の結果" />
+                </DockPanel>
+            </TabItem>
             <TabItem x:Name="RatingTransferTab" Header="評価の移行">
                 <DockPanel Margin="14">
                     <StackPanel DockPanel.Dock="Top">

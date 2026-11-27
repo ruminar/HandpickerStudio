@@ -34,6 +34,10 @@ public partial class ProjectEditorWindow : Window
         RootsGrid.ItemsSource = roots;
         RegisterThumbnailsButton.DataContext = viewModel;
         ThumbnailTab.Visibility = project is null ? Visibility.Collapsed : Visibility.Visible;
+        ArchiveTab.Visibility = project is null ? Visibility.Collapsed : Visibility.Visible;
+        AutoArchiveCheckBox.IsChecked = viewModel.GetArchivePreference(projectId).Automatic;
+        ArchiveRootPicker.ItemsSource = project?.Roots.Where(root => root.Enabled).ToArray();
+        ArchiveRootPicker.SelectedIndex = 0;
         RatingTransferTab.Visibility = project is null ? Visibility.Collapsed : Visibility.Visible;
         RatingTransferActions.IsEnabled = project is { EvaluationPath.Length: > 0 };
         if (!RatingTransferActions.IsEnabled)
@@ -57,6 +61,7 @@ public partial class ProjectEditorWindow : Window
     }
 
     internal Project? Result { get; private set; }
+    internal bool AutoArchive => AutoArchiveCheckBox.IsChecked == true;
 
     private async void RegisterMissingThumbnails(object sender, RoutedEventArgs e)
     {
