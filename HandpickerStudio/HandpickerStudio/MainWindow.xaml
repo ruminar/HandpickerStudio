@@ -75,6 +75,7 @@
                     <Button Content="設定" Click="EditProject" IsEnabled="{Binding CanEditProject}" Margin="0,0,6,0" />
                     <Button Content="登録解除" Click="RemoveProject" IsEnabled="{Binding CanEditProject}" Margin="0,0,6,0" />
                     <Button Content="更新" Click="Reload" Margin="0,0,6,0" />
+                    <Button x:Name="AppUpdateButton" Content="アプリの更新を確認" Click="CheckForAppUpdate" Margin="0,0,6,0" />
                     <Button Content="表示設定" Click="EditAppearance" IsEnabled="{Binding CanSave}" />
                 </StackPanel>
                 <ComboBox x:Name="ProjectPicker" ItemsSource="{Binding Projects}" DisplayMemberPath="Name"

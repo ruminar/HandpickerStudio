@@ -1,6 +1,6 @@
 # HandpickerStudio 自動アップデート詳細設計
 
-- 文書改訂番号：Rev. 1
+- 文書改訂番号：Rev. 2
 - 対象アプリケーションバージョン：HandpickerStudio v0.1.0
 - 基本方針：[基本設計書 §2.2 自動アップデート](HandpickerStudio_BasicDesign.md#22-自動アップデート)
 
@@ -32,7 +32,7 @@
 
 ## 2. 起動確認と版の切り替え
 
-1. 更新確認とダウンロードはバックグラウンドで行える。承認後も、実行中の画像操作、Archive化・解除、廃棄の後処理、サムネイル登録、評価の保存や取り込みが終わるまで待つ。メイン画面、プロジェクト設定、個別ビューワの稼働状態を集約し、切り替え開始後は新しい書き込み操作を受け付けない。他の起動中のインスタンスがあれば更新を延期する。本体の通常終了と保存完了を確認する。
+1. 更新確認とダウンロードはバックグラウンドで行える。承認後も、実行中の画像操作、Archive化・解除、廃棄の後処理、サムネイル登録、評価の保存や取り込みが終わるまで待つ。メイン画面、プロジェクト設定、個別ビューワの稼働状態を集約し、切り替え開始後は新しい書き込み操作を受け付けない。ポータブル版は展開先ごとに起動を一つに制限し、本体の通常終了と保存完了を確認する。
 2. 既に信頼済みの更新処理が署名済みZIPを検証し、別ディレクトリに新版を準備する。現在版への起動先を保持したまま、新版を検証用の状態で起動する。設定を読み取り専用で開き、必要な依存ファイルの読み込み、WPF画面とDispatcherの初期化、更新元への応答を確認する。
 3. 検証用の状態では、通常の起動処理に含まれる重複保留の保存、Archiveディレクトリの作成、起動時Archive、cache生成・清掃、終了時のウインドウ位置保存も抑止する。画像移動・削除、評価保存などを実行できる画面操作は有効化しない。起動確認前に閉じた場合もユーザーデータは書き込まない。
 4. 起動したプロセスの応答と対象版を確認してから起動先の記録を同一ボリュームで切り替え、新版に通常動作の開始を通知する。起動失敗や応答なしの場合は旧版を維持し、再起動時にも復旧できる状態を残す。応答がないプロセスは強制終了せず、必要なら通常の終了を待ってから旧版を起動する。次回起動は更新記録と稼働状態を照合して復旧する。
@@ -45,6 +45,17 @@
 2. 配布モードは検証済みZIPのバイト数とSHA-256から、製品ID、配布先、タグ、対象環境、ファイル名を含むマニフェストを生成する。マニフェストの出力バイト列にRSA-PSS/SHA-256で署名し、署名ファイルに鍵の識別子と署名を記録する。ZIP、マニフェスト、署名の組み合わせを組み込み公開鍵で再検証し、すべて成功した場合に配布用の一組として成果物へ移す。途中失敗時は直前の有効な成果物を保持する。公開時は三点を同じGitHub Releaseの下書きに添付してから公開する。 [RSA署名検証の .NET API](https://learn.microsoft.com/en-us/dotnet/api/system.security.cryptography.rsa.verifydata?view=net-10.0)・[GitHubの公開手順](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases#best-practices-for-publishing-immutable-releases)
 3. 署名に使うRSA鍵は、署名担当者のWindowsユーザー証明書ストア `CurrentUser/My` に登録し、スクリプトは証明書の識別子で選ぶ。秘密鍵、PFXとそのパスワードはリポジトリ・成果物・ビルドログに含めない。正式版用と試験用は別鍵とする。復旧用に暗号化PFXをオフラインで保管し、パスワードを別経路で管理する。運用環境には原則としてエクスポート不可で登録し、別環境でバックアップの復元・署名・検証を確認する。 [Windows証明書ストアの管理](https://learn.microsoft.com/en-us/windows-server/identity/ad-cs/inspect-certificates-manage-certificate-stores)
 4. 計画的な鍵変更では、次の公開鍵も認識できる版を現行鍵で配布し、移行期間中は一つの署名ファイルに旧鍵・新鍵の署名を入れる。初期版から、同じマニフェストに対して信頼済みの鍵で検証できる署名を選べるようにする。旧鍵の廃止後は未移行の利用者に手動更新を案内する。漏えいが疑われる鍵は移行用の署名に使わず、公式の案内で信頼できる最新版への手動更新を促す。本体・更新処理・起動窓口の全てで信頼する公開鍵をそろえる。
+
+署名付きビルドはPowerShell 7.6以降で実行する。以下の例の証明書識別子と試験用リポジトリは、実際に準備した値へ置き換える。
+
+```powershell
+.\build.ps1
+.\build.ps1 -Distribution Release -SigningCertificate <正式版の証明書識別子>
+.\build.ps1 -Distribution Test -TestRepository <所有者/試験用リポジトリ> -TestVersion 0.0.0 -SigningCertificate <試験用証明書識別子>
+.\build.ps1 -Distribution Test -TestRepository <所有者/試験用リポジトリ> -TestVersion 0.1.0 -SigningCertificate <試験用証明書識別子>
+```
+
+通常ビルドのZIPは起動や既存機能の確認に使える。更新試験や配布では `artifacts/test/v<version>/` または `artifacts/release/v<version>/` の署名済み三点を使用する。鍵の切り替え時は `-SigningCertificate` に署名に使う鍵を複数指定でき、`-TrustedCertificate` で公開鍵だけを追加できる。試験用に限り、ワークスペース外のPFXを `-TestPfx` で指定できる。パスワードは `SecureString` として渡す。スクリプトは成果物の作成までを行い、公開はGitHub Releasesで行う。
 
 ## 4. 起動窓口の更新と不要ファイルの整理
 
@@ -67,6 +78,13 @@
 3. 更新を承認し、正常終了後に同じ `HandpickerStudio.exe` から `v0.1.0` が起動することを確認する。起動検証中はデータ操作を試みても書き込みが発生しないことを確認する。更新前のテストデータと照合し、プロジェクト切り替え、画像閲覧、Archiveの復帰、評価参照が引き続き動作し、`v0.0.0` が復旧用に残ることを確認する。
 4. 同じ `v0.0.0` のZIPを別の専用フォルダーに再展開し、プレリリースや古い版の除外、通信断、正式版と試験版の署名の取り違え、ZIP・署名の不一致、サイズやパスの不正、処理中・ファイルロック、起動確認の失敗、切り替え中断を個別に試す。異常応答や破損ファイルはローカルの試験データを使い、公開したZIPは入れ替えない。失敗時の旧版起動とユーザーデータ維持を確認する。起動窓口を置き換える場合の失敗・途中終了も検証する。
 5. 旧配置の取り込みは別の試験用フォルダーで検証する。ローカルで管理対象の正常版を3世代用意した追加試験で、現行版・直前版・復旧用の起動窓口を残し、それより古い管理対象と一時ファイルだけが整理されることを確かめる。
+
+実際に生成した二つの試験用ZIPを使ったローカル検証は次のとおり。GitHubの応答は試験用に差し替え、新版の起動確認と起動窓口の置き換えはWindows上で実行する。
+
+```powershell
+dotnet build tests/HandpickerStudio.Update.Tests/HandpickerStudio.Update.Tests.csproj -m:1 --artifacts-path artifacts/.update-tests
+dotnet artifacts/.update-tests/bin/HandpickerStudio.Update.Tests/debug/HandpickerStudio.Update.Tests.dll artifacts/test artifacts/.update-tests
+```
 
 ## 6. 他アプリへの転用
 

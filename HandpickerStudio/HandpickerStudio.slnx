@@ -1,3 +1,5 @@
 <Solution>
   <Project Path="HandpickerStudio/HandpickerStudio.csproj" />
+  <Project Path="HandpickerStudio.Update/HandpickerStudio.Update.csproj" />
+  <Project Path="HandpickerStudio.Launcher/HandpickerStudio.Launcher.csproj" />
 </Solution>

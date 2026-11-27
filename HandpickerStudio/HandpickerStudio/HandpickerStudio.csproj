@@ -13,6 +13,8 @@
 
   <ItemGroup>
     <PackageReference Include="YamlDotNet" Version="18.1.0" />
+    <ProjectReference Include="../HandpickerStudio.Update/HandpickerStudio.Update.csproj" />
+    <EmbeddedResource Include="$(UpdateProfileFile)" LogicalName="HandpickerStudio.UpdateProfile.json" Condition="'$(UpdateProfileFile)' != ''" />
   </ItemGroup>
 
 </Project>

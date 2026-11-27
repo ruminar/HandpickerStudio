@@ -21,14 +21,21 @@ internal sealed class MainViewModel : INotifyPropertyChanged
     private string cacheNotice = "";
     private string[] scanWarnings = [];
 
-    public MainViewModel(SettingsStore store) => this.store = store;
+    public MainViewModel(SettingsStore store)
+    {
+        this.store = store;
+        CanSave = store.CanWrite;
+    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public Project[] Projects => settings.Projects;
     public Checkpoint? SelectedCheckpoint => selectedCheckpoint;
     public HeldLabel[] HeldLabels => observedHolds.Concat(settings.HeldLabels).DistinctBy(CatalogService.HoldKey).ToArray();
-    public bool CanSave { get; private set; } = true;
+    public bool CanSave { get; private set; }
+    internal bool SettingsLoaded { get; private set; }
+    internal bool CheckUpdatesOnStartup => settings.CheckUpdatesOnStartup;
+    internal string[] CacheLocations => settings.PreviewCacheRoots ?? [];
     public bool CanEditProject => CanSave && SelectedProject is not null;
     public AppearanceTheme Appearance => Enum.IsDefined(settings.Appearance) ? settings.Appearance : AppearanceTheme.Light;
     public bool CreateImageCache => settings.CreateImageCache;
@@ -81,6 +88,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         try
         {
             settings = store.Load();
+            SettingsLoaded = true;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or ArgumentException or InvalidDataException)
         {
@@ -92,11 +100,8 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         return settings.MainWindowPlacement;
     }
 
-    internal void SavePlacement(MainWindowPlacement placement)
-    {
-        if (settings.MainWindowPlacement != placement)
-            TrySave(settings with { MainWindowPlacement = placement });
-    }
+    internal bool SavePlacement(MainWindowPlacement placement) =>
+        settings.MainWindowPlacement == placement || TrySave(settings with { MainWindowPlacement = placement });
 
     public async Task InitializeAsync()
     {
@@ -220,11 +225,11 @@ internal sealed class MainViewModel : INotifyPropertyChanged
             TrySave(settings with { TileSize = size });
     }
 
-    public async Task ChangeDisplaySettingsAsync(AppearanceTheme appearance, bool createCache)
+    public async Task ChangeDisplaySettingsAsync(AppearanceTheme appearance, bool createCache, bool checkUpdatesOnStartup)
     {
         bool cacheChanged = CreateImageCache != createCache;
-        if ((Appearance != appearance || cacheChanged) &&
-            TrySave(settings with { Appearance = appearance, CreateImageCache = createCache }))
+        if ((Appearance != appearance || cacheChanged || CheckUpdatesOnStartup != checkUpdatesOnStartup) &&
+            TrySave(settings with { Appearance = appearance, CreateImageCache = createCache, CheckUpdatesOnStartup = checkUpdatesOnStartup }))
         {
             Changed(nameof(Appearance));
             if (cacheChanged)

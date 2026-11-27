@@ -10,7 +10,7 @@ namespace HandpickerStudio;
 
 public partial class MainWindow : Window
 {
-    private readonly MainViewModel viewModel = new(new SettingsStore(Path.Combine(AppContext.BaseDirectory, "settings.json")));
+    private readonly MainViewModel viewModel = new(new SettingsStore(WorkspacePaths.SettingsPath, readOnly: App.IsProbe));
     private int tileWheelRemainder;
     private bool wasMaximized;
 
@@ -36,21 +36,44 @@ public partial class MainWindow : Window
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         Loaded -= OnLoaded;
-        var initialize = viewModel.InitializeAsync();
-        Guid? startupProject = viewModel.SelectedProject?.Id;
-        await initialize;
-        if (IsLoaded && viewModel.SelectedProject is { } project && project.Id == startupProject &&
-            viewModel.GetArchivePreference(project.Id).Automatic)
-            await RunArchiveAsync(project, selection: null, restore: false, automatic: true);
+        if (App.IsProbe)
+            return;
+        startupRunning = true;
+        try
+        {
+            var initialize = viewModel.InitializeAsync();
+            Guid? startupProject = viewModel.SelectedProject?.Id;
+            await initialize;
+            if (IsLoaded && viewModel.SelectedProject is { } project && project.Id == startupProject &&
+                viewModel.GetArchivePreference(project.Id).Automatic)
+                await RunArchiveAsync(project, selection: null, restore: false, automatic: true);
+        }
+        finally { startupRunning = false; }
+        if (IsLoaded && viewModel.CheckUpdatesOnStartup && App.ReleaseProfile is not null)
+            await CheckForAppUpdateAsync(automatic: true);
     }
 
-    private void OnClosed(object? sender, EventArgs e) => viewModel.Cancel();
+    internal bool ProbeSucceeded => viewModel.SettingsLoaded;
+
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        windowLifetime.Cancel();
+        viewModel.Cancel();
+    }
 
     private void OnClosing(object? sender, CancelEventArgs e)
     {
         e.Cancel = operationRunning;
-        if (!e.Cancel && NativeWindowPlacement.TryRead(new WindowInteropHelper(this).Handle, out var placement))
-            viewModel.SavePlacement(placement.Capture(wasMaximized));
+        if (App.IsProbe || e.Cancel)
+            return;
+        if (App.ExitForUpdate && !CanExitForUpdate())
+        {
+            e.Cancel = true;
+            return;
+        }
+        if (NativeWindowPlacement.TryRead(new WindowInteropHelper(this).Handle, out var placement) &&
+            !viewModel.SavePlacement(placement.Capture(wasMaximized)) && App.ExitForUpdate)
+            e.Cancel = true;
     }
 
     private async void AddProject(object sender, RoutedEventArgs e) => await EditProjectAsync(null);
@@ -59,9 +82,14 @@ public partial class MainWindow : Window
 
     private async void EditAppearance(object sender, RoutedEventArgs e)
     {
-        var editor = new AppearanceSettingsWindow(viewModel.Appearance, viewModel.CreateImageCache) { Owner = this };
+        var editor = new AppearanceSettingsWindow(viewModel.Appearance, viewModel.CreateImageCache,
+            viewModel.CheckUpdatesOnStartup) { Owner = this };
         if (editor.ShowDialog() == true)
-            await viewModel.ChangeDisplaySettingsAsync(editor.Appearance, editor.CreateImageCache);
+        {
+            displaySettingsRunning = true;
+            try { await viewModel.ChangeDisplaySettingsAsync(editor.Appearance, editor.CreateImageCache, editor.CheckUpdatesOnStartup); }
+            finally { displaySettingsRunning = false; }
+        }
     }
 
     private async void EditRoots(object sender, RoutedEventArgs e) => await EditProjectAsync(viewModel.SelectedProject, showRoots: true);

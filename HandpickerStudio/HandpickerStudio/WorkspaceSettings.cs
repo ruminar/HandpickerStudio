@@ -27,7 +27,7 @@ internal sealed record WorkspaceSettings(int Version, Project[] Projects, Guid? 
     bool UseTileView = false, GalleryLayout? Layout = null, int TileSize = WorkspaceSettings.DefaultTileSize,
     AppearanceTheme Appearance = AppearanceTheme.Light, bool CreateImageCache = false,
     Guid? PreviewCacheOwner = null, string[]? PreviewCacheRoots = null, MainWindowPlacement? MainWindowPlacement = null,
-    ArchivePreference[]? ArchivePreferences = null)
+    ArchivePreference[]? ArchivePreferences = null, bool CheckUpdatesOnStartup = true)
 {
     public const int DefaultTileSize = 174;
     public const int MinimumTileSize = 96;
@@ -60,7 +60,20 @@ internal static class WorkspacePaths
         path.StartsWith(Path.EndsInDirectorySeparator(root) ? root : root + Path.DirectorySeparatorChar,
             StringComparison.OrdinalIgnoreCase);
 
-    public static string DefaultCachePath => Path.Combine(AppContext.BaseDirectory, "cache");
+    public static string DefaultCachePath => App.Installation?.Cache ?? Path.Combine(AppContext.BaseDirectory, "cache");
+
+    internal static string SettingsPath
+    {
+        get
+        {
+            if (App.Installation is not { } installation)
+                return Path.Combine(AppContext.BaseDirectory, "settings.json");
+            string directory = App.IsProbe && !Directory.Exists(installation.Data) ? installation.Root : installation.Data;
+            return Path.Combine(directory, "settings.json");
+        }
+    }
+
+    internal static string ArchiveHistoryPath => Path.Combine(App.Installation?.Data ?? AppContext.BaseDirectory, "archive-history");
 
     public static string CacheBase(Project project) => project.CachePath.Length == 0 ? DefaultCachePath : project.CachePath;
 
@@ -116,10 +129,11 @@ internal static class WorkspacePaths
     }
 }
 
-internal sealed class SettingsStore(string path)
+internal sealed class SettingsStore(string path, bool readOnly = false)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
     private byte[]? savedBytes;
+    internal bool CanWrite => !readOnly;
 
     public WorkspaceSettings Load()
     {
@@ -149,6 +163,8 @@ internal sealed class SettingsStore(string path)
 
     public void Save(WorkspaceSettings settings)
     {
+        if (readOnly)
+            throw new IOException("起動確認中は設定を保存できません。");
         using var writeLock = new FileStream(path + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         byte[]? currentBytes = ReadBytes();
         if ((savedBytes is null) != (currentBytes is null) ||

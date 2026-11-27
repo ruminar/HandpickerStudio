@@ -72,7 +72,7 @@ public partial class MainWindow
         var projects = viewModel.Projects;
         var holds = viewModel.HeldLabels;
         var confirmCopy = ConfirmCopyOnce(owner);
-        string history = Path.Combine(AppContext.BaseDirectory, "archive-history");
+        string history = WorkspacePaths.ArchiveHistoryPath;
         return () => ArchiveHistory.Run(history, projects, project, holds, selection, restore, confirmCopy, cleanup, quiet);
     }
 }

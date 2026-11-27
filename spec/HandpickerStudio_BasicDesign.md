@@ -1,6 +1,6 @@
 # HandpickerStudio 基本設計書
 
-- 文書改訂番号：Rev. 31（自動アップデート方式の採用と更新試験）
+- 文書改訂番号：Rev. 32（自動アップデートのビルドとローカル検証）
 - 対象アプリケーションバージョン：HandpickerStudio v0.1.0
 - 作成日：2026-11-24
 - 対象：Windowsデスクトップアプリ HandpickerStudio および ComfyUI-CheckpointHandpickerSuite 連携改修

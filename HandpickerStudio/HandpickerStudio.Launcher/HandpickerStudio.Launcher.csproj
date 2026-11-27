@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>HandpickerStudio</AssemblyName>
+    <PackageId>HandpickerStudio.Launcher</PackageId>
+    <Version>0.1.0</Version>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>../HandpickerStudio/Assets/HandpickerStudio.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../HandpickerStudio.Update/HandpickerStudio.Update.csproj" />
+    <EmbeddedResource Include="$(UpdateProfileFile)" LogicalName="HandpickerStudio.UpdateProfile.json" Condition="'$(UpdateProfileFile)' != ''" />
+    <InternalsVisibleTo Include="HandpickerStudio.Update.Tests" />
+  </ItemGroup>
+</Project>
