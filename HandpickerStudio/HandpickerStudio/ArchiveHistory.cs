@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace HandpickerStudio;
 
-internal static class ArchiveHistory
+internal static partial class ArchiveHistory
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -24,7 +24,7 @@ internal static class ArchiveHistory
 
         var result = new Result();
         if (restore)
-            Restore(history, project, selection, confirmCopy, cleanup, result);
+            Restore(history, projects, project, selection, confirmCopy, cleanup, result);
         else
             Archive(history, projects, project, holds, selection, confirmCopy, cleanup, result);
         return quiet && !result.HasWarnings ? null : result.Format(restore);
@@ -41,6 +41,7 @@ internal static class ArchiveHistory
 
         var checkpoints = catalog.Checkpoints.Where(item => !item.SharedRelativePath && (selection?.Contains(item.RelativePath) ?? true))
             .ToDictionary(item => item.RelativePath, StringComparer.Ordinal);
+        var sources = new HashSet<CleanupSource>();
         foreach (var image in scan.Images)
         {
             if (image.CheckpointPath is not { } owner || !checkpoints.TryGetValue(owner, out var checkpoint) ||
@@ -76,12 +77,14 @@ internal static class ArchiveHistory
                     throw;
                 }
                 result.Moved++;
+                sources.Add(new(Path.GetDirectoryName(image.FullPath)!, output, resolvedOutput));
             }
             catch (Exception error) when (IsFileError(error))
             {
                 result.Report($"{image.FullPath}{Environment.NewLine}{error.Message}");
             }
         }
+        PruneEmptyDirectories(sources, catalog.OutputPaths.Values, result);
     }
 
     private static DateOnly? LastBucket(string relativePath)
@@ -99,10 +102,11 @@ internal static class ArchiveHistory
         return latest;
     }
 
-    private static void Restore(string history, Project project, HashSet<string>? selection,
+    private static void Restore(string history, Project[] projects, Project project, HashSet<string>? selection,
         Func<string, string, bool> confirmCopy, PreviewCache.RemovalBatch? cleanup, Result result)
     {
         var roots = project.Roots.Where(root => root.Enabled).ToDictionary(root => root.Id);
+        var sources = new HashSet<CleanupSource>();
         foreach (string receiptPath in Directory.EnumerateFiles(history, "*.json"))
         {
             try
@@ -124,8 +128,9 @@ internal static class ArchiveHistory
                     throw new IOException($"OutputまたはArchiveに接続できません。{receipt.OutputPath}");
                 ArchiveDirectory.RequireManagedDirectory(Path.GetDirectoryName(archive)!);
                 ArchiveDirectory.RequireManagedDirectory(archive);
+                string archiveLocation = CatalogService.ResolveExistingDirectory(archive);
                 if (!CatalogService.ResolveExistingDirectory(output).Equals(receipt.OutputLocation, StringComparison.OrdinalIgnoreCase) ||
-                    WorkspacePaths.Overlap(receipt.OutputLocation, CatalogService.ResolveExistingDirectory(archive)))
+                    WorkspacePaths.Overlap(receipt.OutputLocation, archiveLocation))
                     throw new IOException($"OutputまたはArchiveの参照先が変わりました。{receipt.OutputPath}");
 
                 if (!Exists(receipt.ArchivePath))
@@ -144,6 +149,7 @@ internal static class ArchiveHistory
                         ImageOperations.MoveFile(file, receipt.ArchivePath, receipt.OutputPath, confirmCopy, preserveLastWrite: true));
                 }
                 result.Moved++;
+                sources.Add(new(Path.GetDirectoryName(receipt.ArchivePath)!, archive, archiveLocation, receipt.CheckpointPath));
                 File.Delete(receiptPath);
             }
             catch (Exception error) when (IsFileError(error))
@@ -151,6 +157,7 @@ internal static class ArchiveHistory
                 result.Report(error.Message);
             }
         }
+        PruneEmptyDirectories(sources, projects.SelectMany(item => item.Roots).Select(root => root.OutputPath), result);
     }
 
     private static void RequireFileBelow(string path, string root)
@@ -209,6 +216,7 @@ internal static class ArchiveHistory
         private int warnings;
         public int Moved { get; set; }
         public int Missing { get; set; }
+        public int PrunedDirectories { get; set; }
         public bool HasWarnings => warnings != 0;
 
         public void Report(string detail)
@@ -223,6 +231,8 @@ internal static class ArchiveHistory
             var lines = new List<string> { restore ? $"Outputに戻した画像 {Moved} 枚" : $"Archive化した画像 {Moved} 枚" };
             if (Missing > 0)
                 lines.Add($"Archiveに見つからなかった画像 {Missing} 枚");
+            if (PrunedDirectories > 0)
+                lines.Add($"削除した空フォルダー {PrunedDirectories} 件");
             if (warnings > 0)
             {
                 lines.Add($"確認事項 {warnings} 件");

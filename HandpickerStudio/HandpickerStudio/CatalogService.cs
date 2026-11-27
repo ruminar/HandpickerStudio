@@ -341,7 +341,7 @@ internal static partial class CatalogService
         {
             try
             {
-                using var stream = OpenForReading(Path.Combine(directory, "_checkpoint.json"));
+                using var stream = OpenForReading(Path.Combine(directory, ArchiveDirectory.CheckpointOwnerFileName));
                 using var document = JsonDocument.Parse(stream);
                 if (document.RootElement.ValueKind != JsonValueKind.Object ||
                     !document.RootElement.TryGetProperty("checkpointRelativePath", out var key) || key.ValueKind != JsonValueKind.String)

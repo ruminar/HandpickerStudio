@@ -293,7 +293,7 @@ internal static class ImageOperations
         {
             if (folder.Name.StartsWith('★') || folder.Attributes.HasFlag(FileAttributes.ReparsePoint))
                 continue;
-            string ownerPath = Path.Combine(folder.FullName, "_checkpoint.json");
+            string ownerPath = Path.Combine(folder.FullName, ArchiveDirectory.CheckpointOwnerFileName);
             if (!File.Exists(ownerPath) || File.GetAttributes(ownerPath).HasFlag(FileAttributes.ReparsePoint))
                 continue;
             using var stream = CatalogService.OpenForReading(ownerPath);
@@ -339,7 +339,7 @@ internal static class ImageOperations
         string folder = Path.Combine(archive, $"{safeName}-{suffix}");
         ArchiveDirectory.RequireManagedDirectory(folder);
         Directory.CreateDirectory(folder);
-        string ownerPath = Path.Combine(folder, "_checkpoint.json");
+        string ownerPath = Path.Combine(folder, ArchiveDirectory.CheckpointOwnerFileName);
         string temporary = ownerPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {

@@ -8,6 +8,8 @@ namespace HandpickerStudio;
 
 internal static class ArchiveDirectory
 {
+    internal const string CheckpointOwnerFileName = "_checkpoint.json";
+
     public static string GetPath(Guid projectId, ImageRoot root) =>
         Path.Combine(root.ArchivePath, projectId.ToString("N"), root.Id.ToString("N"));
 

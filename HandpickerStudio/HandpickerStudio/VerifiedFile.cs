@@ -72,7 +72,7 @@ internal sealed class VerifiedFile : IDisposable
 
     public void DeleteCacheFile() => Delete("画像キャッシュを削除できません。");
 
-    private void Delete(string message)
+    internal void Delete(string message)
     {
         if (!SetFileInformationByHandle(handle, 4, [1], 1))
             throw Win32Error($"{message}{path}");
