@@ -5,25 +5,29 @@ namespace HandpickerStudio;
 
 public partial class MoveDestinationWindow : Window
 {
-    private readonly int imageCount;
+    private readonly ImageEntry[] images;
     private CancellationTokenSource? pending;
+    private ImageMoveMatch[] matches = [];
 
-    internal MoveDestinationWindow(Project[] projects, Guid currentProject, int imageCount)
+    internal MoveDestinationWindow(Project[] projects, Guid currentProject, ImageEntry[] images)
     {
-        this.imageCount = imageCount;
+        this.images = images;
         InitializeComponent();
         Project[] eligible = projects.Where(project => project.Roots.Any(root => root.Enabled)).ToArray();
         ProjectsBox.ItemsSource = eligible;
         ProjectsBox.SelectedItem = eligible.FirstOrDefault(project => project.Id != currentProject) ?? eligible.FirstOrDefault();
     }
 
-    internal Checkpoint? Destination { get; private set; }
+    internal Project? Destination { get; private set; }
     internal ImageRoot? DestinationRoot { get; private set; }
+    internal ImageMoveMatch[] Confirmed { get; private set; } = [];
 
     private async void ProjectChanged(object sender, SelectionChangedEventArgs e)
     {
         pending?.Cancel();
-        CheckpointsBox.ItemsSource = null;
+        matches = [];
+        MoveButton.IsEnabled = false;
+        DestinationPath.Text = "";
         RootsBox.ItemsSource = null;
         if (ProjectsBox.SelectedItem is not Project project)
             return;
@@ -37,18 +41,19 @@ public partial class MoveDestinationWindow : Window
         pending = load;
         try
         {
-            var catalog = await Task.Run(() => CatalogService.ReadCatalog([project], project, load.Token), load.Token);
+            var plan = await Task.Run(() => ImageOperations.PlanProjectMove(project, images, load.Token), load.Token);
             if (load.IsCancellationRequested)
                 return;
 
-            CheckpointsBox.ItemsSource = catalog.Checkpoints;
-            if (catalog.Checkpoints.Length == 1)
-                CheckpointsBox.SelectedIndex = 0;
-            DestinationPath.Text = catalog.Checkpoints.Length == 0 ? "利用できるCheckpointがありません。" : "";
+            matches = plan;
             DestinationChanged(sender, e);
         }
         catch (OperationCanceledException) when (load.IsCancellationRequested) { }
-        catch (Exception error) when (MainWindow.IsOperationError(error)) { DestinationPath.Text = error.Message; }
+        catch (Exception error) when (MainWindow.IsOperationError(error))
+        {
+            if (!load.IsCancellationRequested)
+                DestinationPath.Text = error.Message;
+        }
         finally
         {
             if (ReferenceEquals(pending, load))
@@ -58,17 +63,25 @@ public partial class MoveDestinationWindow : Window
 
     private void DestinationChanged(object sender, SelectionChangedEventArgs e)
     {
-        MoveButton.IsEnabled = RootsBox.SelectedItem is ImageRoot && CheckpointsBox.SelectedItem is Checkpoint;
-        if (MoveButton.IsEnabled && RootsBox.SelectedItem is ImageRoot root && CheckpointsBox.SelectedItem is Checkpoint target)
-            DestinationPath.Text = $"{imageCount} 枚 → {target.Project.Name} / {root.Name} / {target.RelativePath}{Environment.NewLine}{root.ArchivePath}";
+        int eligible = matches.Count(match => match.Checkpoint is not null);
+        MoveButton.IsEnabled = eligible > 0 && RootsBox.SelectedItem is ImageRoot;
+        if (matches.Length == 0)
+            return;
+
+        DestinationPath.Text = $"移動対象 {eligible} 枚 / 対象外 {matches.Length - eligible} 枚";
+        if (eligible == 0)
+            DestinationPath.Text += $"{Environment.NewLine}ファイル名から移動先を特定できる画像がありません。";
+        else if (ProjectsBox.SelectedItem is Project project && RootsBox.SelectedItem is ImageRoot root)
+            DestinationPath.Text += $"{Environment.NewLine}{project.Name} / {root.Name}{Environment.NewLine}{root.ArchivePath}";
     }
 
     private void Confirm(object sender, RoutedEventArgs e)
     {
-        if (CheckpointsBox.SelectedItem is not Checkpoint checkpoint || RootsBox.SelectedItem is not ImageRoot root)
+        if (!MoveButton.IsEnabled || ProjectsBox.SelectedItem is not Project project || RootsBox.SelectedItem is not ImageRoot root)
             return;
-        Destination = checkpoint;
+        Destination = project;
         DestinationRoot = root;
+        Confirmed = matches;
         DialogResult = true;
     }
 

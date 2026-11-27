@@ -7,6 +7,7 @@ using System.Windows.Media.Imaging;
 namespace HandpickerStudio;
 
 internal sealed record ImageTarget(ImageEntry Image, string RootPath, FileStamp Stamp);
+internal sealed record ImageMoveMatch(ImageEntry Image, Checkpoint? Checkpoint, string? Problem);
 
 internal static class ImageOperations
 {
@@ -34,6 +35,40 @@ internal static class ImageOperations
         });
     }
 
+    internal static ImageMoveMatch[] PlanProjectMove(Project destination, ImageEntry[] images, CancellationToken token)
+    {
+        var labels = CatalogService.IndexLabels(CatalogService.ReadCheckpoints(destination, error =>
+            throw new IOException($"移動先のCheckpoint一覧を確認できません。{Environment.NewLine}{error}"), token));
+
+        return images.DistinctBy(image => image.FullPath, StringComparer.OrdinalIgnoreCase).Select(image =>
+        {
+            token.ThrowIfCancellationRequested();
+            var matches = CatalogService.MatchImageFileName(image.Name, labels);
+            return matches switch
+            {
+                [var checkpoint] => new ImageMoveMatch(image, checkpoint, null),
+                [] => new(image, null, "ファイル名に一致するCheckpointがありません。"),
+                _ => new(image, null, "ファイル名に一致するCheckpointが複数あります。" + Environment.NewLine +
+                    string.Join(Environment.NewLine, matches.Select(checkpoint => checkpoint.FullPath)))
+            };
+        }).ToArray();
+    }
+
+    internal static ImageMoveMatch[] RecheckProjectMove(Project destination, ImageMoveMatch[] confirmed, CancellationToken token)
+    {
+        var selected = confirmed.Where(match => match.Checkpoint is not null).Select(match => match.Image).ToArray();
+        var latest = PlanProjectMove(destination, selected, token).ToDictionary(match => match.Image.FullPath, StringComparer.OrdinalIgnoreCase);
+        return confirmed.Select(match =>
+        {
+            if (match.Checkpoint is null)
+                return match;
+
+            var current = latest[match.Image.FullPath];
+            return current.Checkpoint == match.Checkpoint ? current :
+                current with { Checkpoint = null, Problem = current.Problem ?? "確認後にファイル名の一致先が変わりました。" };
+        }).ToArray();
+    }
+
     public static void Move(ImageTarget source, Checkpoint checkpoint, ImageRoot destinationRoot)
     {
         string checkpointFolder = PrepareArchive(checkpoint, destinationRoot);
@@ -45,6 +80,8 @@ internal static class ImageOperations
         string destination = Path.GetFullPath(Path.Combine(checkpointFolder, relativePath));
         if (!WorkspacePaths.Within(destination, checkpointFolder) || destination.Equals(checkpointFolder, StringComparison.OrdinalIgnoreCase))
             throw new IOException("Archiveの保存先が正しくありません。");
+        if (destination.Equals(source.Image.FullPath, StringComparison.OrdinalIgnoreCase))
+            throw new IOException("画像はすでに移動先にあります。");
         CreateBelow(checkpointFolder, Path.GetDirectoryName(destination)!);
 
         using var file = VerifiedFile.Open(source.Image.FullPath, source.RootPath, source.Stamp, forMove: true);

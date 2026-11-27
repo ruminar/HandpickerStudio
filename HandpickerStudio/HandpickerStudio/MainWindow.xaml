@@ -75,14 +75,6 @@
                     <Button Content="設定" Click="EditProject" IsEnabled="{Binding CanEditProject}" Margin="0,0,6,0" />
                     <Button Content="登録解除" Click="RemoveProject" IsEnabled="{Binding CanEditProject}" Margin="0,0,6,0" />
                     <Button Content="更新" Click="Reload" Margin="0,0,6,0" />
-                    <Button Content="評価の移行" Click="OpenRatingTransferMenu" IsEnabled="{Binding CanEditProject}" Margin="0,0,6,0">
-                        <Button.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="評価をエクスポート…" Click="ExportRatings" />
-                                <MenuItem Header="評価をインポート…" Click="ImportRatings" />
-                            </ContextMenu>
-                        </Button.ContextMenu>
-                    </Button>
                     <Button Content="表示設定" Click="EditAppearance" IsEnabled="{Binding CanSave}" />
                 </StackPanel>
                 <ComboBox x:Name="ProjectPicker" ItemsSource="{Binding Projects}" DisplayMemberPath="Name"
@@ -200,7 +192,7 @@
                             <ListBox.ContextMenu>
                                 <ContextMenu>
                                     <MenuItem x:Name="RecycleImagesMenu" Header="ごみ箱へ移動" InputGestureText="Delete" Click="RecycleSelectedImages" />
-                                    <MenuItem x:Name="MoveImagesMenu" Header="プロジェクト・Checkpointへ移動…" Click="MoveSelectedImages" />
+                                    <MenuItem x:Name="MoveImagesMenu" Header="プロジェクトへ移動…" Click="MoveSelectedImages" />
                                     <MenuItem x:Name="ThumbnailMenu" Header="代表サムネイルに設定" Click="SetSelectedThumbnail" />
                                     <MenuItem x:Name="ReleaseLegacyHoldsMenu" Header="旧版の保留を解除…" Click="ReleaseLegacyHolds" Visibility="Collapsed" />
                                 </ContextMenu>

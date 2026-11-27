@@ -96,6 +96,24 @@
                              VerticalScrollBarVisibility="Auto" AutomationProperties.Name="サムネイル一括登録の結果" />
                 </DockPanel>
             </TabItem>
+            <TabItem x:Name="RatingTransferTab" Header="評価の移行">
+                <DockPanel Margin="14">
+                    <StackPanel DockPanel.Dock="Top">
+                        <TextBlock x:Name="RatingTransferDescription" Text="保存済みのプロジェクト設定を使います。インポートした評価は共有評価DBに反映されます。"
+                                   TextWrapping="Wrap" />
+                        <StackPanel x:Name="RatingTransferActions" Margin="0,12,0,12">
+                            <CheckBox x:Name="IncludeDeletedHistory" IsChecked="True" Content="エクスポートに廃棄したCheckpointの履歴を含める"
+                                      Margin="0,0,0,8" />
+                            <WrapPanel>
+                                <Button Content="評価をエクスポート…" Click="ExportRatings" Margin="0,0,8,0" />
+                                <Button Content="評価をインポート…" Click="ImportRatings" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </StackPanel>
+                    <TextBox x:Name="RatingTransferReport" IsReadOnly="True" TextWrapping="Wrap" Visibility="Collapsed"
+                             VerticalScrollBarVisibility="Auto" AutomationProperties.Name="評価の移行結果" />
+                </DockPanel>
+            </TabItem>
         </TabControl>
     </DockPanel>
 </Window>

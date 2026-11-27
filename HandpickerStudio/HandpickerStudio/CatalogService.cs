@@ -85,9 +85,7 @@ internal static partial class CatalogService
         var unconfirmedOutputs = projects.Where(project => incomplete.Contains(project.Id)).SelectMany(project => project.Roots)
             .Select(root => outputPaths[root.OutputPath]).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
-        var labels = checkpoints.SelectMany(checkpoint => SaverLabels(checkpoint.SafeName)
-                .Select(label => (Label: label, Checkpoint: checkpoint)))
-            .ToLookup(item => item.Label, item => item.Checkpoint, StringComparer.OrdinalIgnoreCase);
+        var labels = IndexLabels(checkpoints);
         var (heldLabels, report) = FindLabelCollisions(labels, outputPaths, token);
 
         var activeModels = checkpoints.Where(item => item.Project.Id == active.Id).ToArray();
@@ -382,7 +380,14 @@ internal static partial class CatalogService
         }
     }
 
-    private static HashSet<string> MatchingLabels(string relativePath, ILookup<string, Checkpoint> labels, ILookup<string, HeldLabel> held)
+    internal static ILookup<string, Checkpoint> IndexLabels(IEnumerable<Checkpoint> checkpoints) =>
+        checkpoints.SelectMany(checkpoint => SaverLabels(checkpoint.SafeName).Select(label => (Label: label, Checkpoint: checkpoint)))
+            .ToLookup(item => item.Label, item => item.Checkpoint, StringComparer.OrdinalIgnoreCase);
+
+    internal static Checkpoint[] MatchImageFileName(string fileName, ILookup<string, Checkpoint> labels) =>
+        MatchingLabels(fileName, labels).SelectMany(label => labels[label]).Distinct().ToArray();
+
+    private static HashSet<string> MatchingLabels(string relativePath, ILookup<string, Checkpoint> labels, ILookup<string, HeldLabel>? held = null)
     {
         var matches = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         string[] parts = relativePath.Split('/');
@@ -412,7 +417,7 @@ internal static partial class CatalogService
 
         void Add(string label)
         {
-            if (labels.Contains(label) || held.Contains(label))
+            if (labels.Contains(label) || held?.Contains(label) == true)
                 matches.Add(label);
         }
     }

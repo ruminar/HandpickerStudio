@@ -27,12 +27,12 @@ internal static class RatingTransfer
         return $"{(name.Length == 0 ? "checkpoint_tags" : name)}_{date:yyyyMMdd_HHmmss}.json";
     }
 
-    public static string Export(Project project, string path)
+    public static string Export(Project project, string path, bool includeDeletedHistory)
     {
         if (project.EvaluationPath.Length == 0)
             throw new IOException("評価JSONが未指定です。プロジェクト設定から指定できます。");
 
-        var (ratings, deleted) = ReadExportSnapshot(project);
+        var (ratings, deleted) = ReadExportSnapshot(project, includeDeletedHistory);
         var models = ratings.Length == 0 ? [] : ReadModels(project);
         var byPath = models.ToLookup(item => item.Model.RelativePath, StringComparer.OrdinalIgnoreCase);
         var exported = new List<RatingTransferEntry>();
@@ -76,13 +76,13 @@ internal static class RatingTransfer
         return $"書き出し {entries.Count} 件 / 廃棄履歴 {deleted.Length} 件 / スキップ {skipped} 件{Environment.NewLine}{path}";
     }
 
-    private static (KeyValuePair<string, Rating>[] Ratings, DeletedCheckpoint[] Deleted) ReadExportSnapshot(Project project)
+    private static (KeyValuePair<string, Rating>[] Ratings, DeletedCheckpoint[] Deleted) ReadExportSnapshot(Project project, bool includeDeletedHistory)
     {
         using var stream = CatalogService.OpenForReading(project.EvaluationPath);
         using var document = JsonDocument.Parse(stream);
         var root = document.RootElement;
         var ratings = CatalogService.ParseRatings(root).Where(item => item.Value != Rating.None).ToArray();
-        return (ratings, DeletedCheckpointHistory.ReadProject(root, project.Id));
+        return (ratings, includeDeletedHistory ? DeletedCheckpointHistory.ReadProject(root, project.Id) : []);
     }
 
     public static RatingImportPlan Preview(Project project, string path)

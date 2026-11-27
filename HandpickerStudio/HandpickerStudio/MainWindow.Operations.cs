@@ -80,13 +80,30 @@ public partial class MainWindow
         if (images.Length == 0)
             return;
 
-        var dialog = new MoveDestinationWindow(viewModel.Projects, project.Id, images.Length) { Owner = this };
+        var dialog = new MoveDestinationWindow(viewModel.Projects, project.Id, images) { Owner = this };
         if (dialog.ShowDialog() == true && dialog.Destination is { } destination && dialog.DestinationRoot is { } root)
         {
             var cleanup = BeginCacheCleanup();
-            await RunOperation("画像を移動", () => ProcessImages(project, images, image => ImageOperations.Move(image, destination, root), cleanup),
+            await RunOperation("画像を移動", () => MoveImagesToProject(project, destination, root, dialog.Confirmed, cleanup),
                 cleanup: cleanup);
         }
+    }
+
+    private static string? MoveImagesToProject(Project source, Project destination, ImageRoot root, ImageMoveMatch[] confirmed,
+        PreviewCache.RemovalBatch? cleanup)
+    {
+        var matches = ImageOperations.RecheckProjectMove(destination, confirmed, CancellationToken.None);
+        var targets = matches.Where(match => match.Checkpoint is not null)
+            .ToDictionary(match => match.Image.FullPath, match => match.Checkpoint!, StringComparer.OrdinalIgnoreCase);
+        var moving = matches.Where(match => match.Checkpoint is not null).Select(match => match.Image).ToArray();
+        string? result = ProcessImages(source, moving, image => ImageOperations.Move(image, targets[image.Image.FullPath], root), cleanup);
+        var skipped = matches.Where(match => match.Checkpoint is null).ToArray();
+        if (skipped.Length == 0)
+            return result;
+
+        return $"{result ?? $"移動完了 {moving.Length} 枚"}{Environment.NewLine}{Environment.NewLine}" +
+            $"対象外 {skipped.Length} 枚{Environment.NewLine}" + string.Join(Environment.NewLine + Environment.NewLine,
+                skipped.Select(match => $"{match.Image.FullPath}{Environment.NewLine}{match.Problem}"));
     }
 
     private async void SetSelectedThumbnail(object sender, RoutedEventArgs e)

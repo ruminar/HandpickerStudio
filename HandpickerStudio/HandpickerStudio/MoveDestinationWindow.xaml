@@ -16,8 +16,7 @@
             <ComboBox x:Name="ProjectsBox" DisplayMemberPath="Name" SelectionChanged="ProjectChanged" />
             <Label Content="参照ルート" Target="{Binding ElementName=RootsBox}" />
             <ComboBox x:Name="RootsBox" DisplayMemberPath="Name" SelectionChanged="DestinationChanged" />
-            <Label Content="Checkpoint" Target="{Binding ElementName=CheckpointsBox}" />
-            <ComboBox x:Name="CheckpointsBox" DisplayMemberPath="RelativePath" SelectionChanged="DestinationChanged" />
+            <TextBlock Text="画像のファイル名から、移動先のCheckpointを判定します。" TextWrapping="Wrap" Margin="0,14,0,0" />
         </StackPanel>
     </DockPanel>
 </Window>
