@@ -23,7 +23,8 @@ public partial class MainWindow
         if (App.Installation is not { } installation || App.ReleaseProfile is not { } profile)
         {
             if (!automatic)
-                ShowReport("アプリの更新", "署名付きのポータブル版で更新を利用できます。");
+                ShowReport("アプリの更新",
+                    $"現在の版 {App.Version}{Environment.NewLine}署名付きのポータブル版で更新を利用できます。");
             return;
         }
         if (!viewModel.CanSave)
@@ -46,14 +47,14 @@ public partial class MainWindow
                 if (!automatic)
                 {
                     await WaitForIdleAsync(token);
-                    ShowReport("アプリの更新", $"現在の版 v{App.Version} は最新版です。");
+                    ShowReport("アプリの更新", $"現在の版 {App.Version} は最新版です。");
                 }
                 return;
             }
 
             await WaitForIdleAsync(token);
             approved = MessageBox.Show(this,
-                $"HandpickerStudio v{App.Version} を v{candidate.Version} に更新しますか？\n\n{candidate.Notes}",
+                $"HandpickerStudio {App.Version} を {candidate.Version} に更新しますか？\n\n{candidate.Notes}",
                 "アプリの更新", MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel) == MessageBoxResult.OK;
             if (!approved)
                 return;

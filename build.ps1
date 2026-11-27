@@ -119,7 +119,7 @@ try {
 
     if ($Distribution -ne 'Local') {
         $releaseParent = Join-Path $artifacts.FullName $Distribution.ToLowerInvariant()
-        $releaseFolder = Join-Path $releaseParent "v$version"
+        $releaseFolder = Join-Path $releaseParent $version
         New-Item -ItemType Directory -Path $releaseParent -Force | Out-Null
         if ((Get-Item -LiteralPath $releaseParent -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
             throw 'The release output parent cannot be a link.'

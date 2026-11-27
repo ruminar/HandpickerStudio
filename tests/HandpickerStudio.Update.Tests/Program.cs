@@ -13,8 +13,8 @@ if (args is not [var packages, var scratch])
 
 const string oldest = "0.0.0";
 const string newest = "0.1.0";
-string initialZip = Path.GetFullPath(Path.Combine(packages, "v" + oldest, $"HandpickerStudio-UpdateTest-{oldest}-win-x64.zip"));
-string newestRelease = Path.GetFullPath(Path.Combine(packages, "v" + newest));
+string initialZip = Path.GetFullPath(Path.Combine(packages, oldest, $"HandpickerStudio-UpdateTest-{oldest}-win-x64.zip"));
+string newestRelease = Path.GetFullPath(Path.Combine(packages, newest));
 string fixture = Path.GetFullPath(Path.Combine(scratch, "run-" + Guid.NewGuid().ToString("N")));
 var main = Prepare("success");
 var appAssembly = Assembly.LoadFile(Path.Combine(main.VersionDirectory(oldest), "HandpickerStudio.dll"));
@@ -52,14 +52,14 @@ using (var updates = Client(assets))
 {
     Check(await updates.CheckAsync(Version.Parse(newest), default) is null, "same version is ignored");
     var candidate = await updates.CheckAsync(Version.Parse(oldest), default) ?? throw new Exception("No update candidate.");
-    Check(candidate.Version == newest, "newer stable release selected through the Latest API");
+    Check(candidate.Version == newest && candidate.Tag == newest, "newer stable release selected using a numeric tag");
     await updates.StageAsync(candidate, main, default);
 }
 
 string oldLauncherHash = UpdatePackage.HashFile(main.Launcher);
 var updater = new InstallationUpdater(main, profile);
 var state = updater.Apply(new InstallationState(oldest));
-Check(state.Current == newest && state.Previous == oldest, "v0.0.0 is promoted to v0.1.0");
+Check(state.Current == newest && state.Previous == oldest, "0.0.0 is promoted to 0.1.0");
 Check(Directory.Exists(main.VersionDirectory(oldest)) && !File.Exists(main.PendingPath), "previous version retained and pending update cleared");
 Check(UpdatePackage.HashFile(main.Launcher) != oldLauncherHash && UpdatePackage.HashFile(main.LauncherBackup) == oldLauncherHash,
     "the entry executable is replaced with a recoverable backup");
@@ -208,6 +208,7 @@ async Task TestLegacyLaunchAsync()
                 await Task.Delay(200, timeout.Token);
         }
         using var migrated = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(layout.Data, "settings.json")));
+        Check(window.MainWindowTitle == $"HandpickerStudio（更新試験用 {oldest}）", "test title displays the version without v");
         Check(migrated.RootElement.GetProperty("tileSize").GetInt32() == 234 &&
             UpdatePackage.HashFile(oldSettings) == originalHash && File.Exists(cache) &&
             File.ReadAllText(Path.Combine(layout.Data, "archive-history", historyProject, "original.json")) == File.ReadAllText(oldReceipt),
@@ -288,7 +289,7 @@ sealed class FixtureHttpHandler(UpdateProfile profile, Dictionary<string, byte[]
         {
             string metadata = JsonSerializer.Serialize(new
             {
-                draft = false, prerelease, tag_name = "v0.1.0", body = "Fixture",
+                draft = false, prerelease, tag_name = "0.1.0", body = "Fixture",
                 assets = files.Select(file => new { name = file.Key, size = file.Value.Length, state = "uploaded",
                     digest = "sha256:" + Convert.ToHexString(SHA256.HashData(file.Value)).ToLowerInvariant() })
             });

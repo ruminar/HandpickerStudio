@@ -104,7 +104,7 @@ internal static partial class Program
                     Notify("更新の復旧に確認が必要です", $"{error.Message}\n{recovery.Message}");
                     return 1;
                 }
-                Notify("HandpickerStudioの更新結果", $"現在の版 v{state.Current} を起動します。\n{error.Message}");
+                Notify("HandpickerStudioの更新結果", $"現在の版 {state.Current} を起動します。\n{error.Message}");
             }
             updater.RemoveObsolete(state);
         }
@@ -143,7 +143,7 @@ internal static partial class Program
         CheckApplication(layout, version);
         using var probe = Start(layout.ApplicationPath(version), layout.Root, "--probe", layout.Root);
         if (!probe.WaitForExit(30000) || probe.ExitCode != 0)
-            throw new IOException($"v{version} の起動を確認できませんでした。");
+            throw new IOException($"バージョン {version} の起動を確認できませんでした。");
     }
 
     internal static Process Start(string exe, string workingDirectory, params string[] arguments)

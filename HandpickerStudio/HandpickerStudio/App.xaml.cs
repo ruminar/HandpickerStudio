@@ -47,8 +47,7 @@ public partial class App : Application
 
             var window = new MainWindow();
             MainWindow = window;
-            if (ReleaseProfile?.Test == true)
-                window.Title += $"（更新試験用 v{Version}）";
+            window.Title += ReleaseProfile?.Test == true ? $"（更新試験用 {Version}）" : $" {Version}";
             if (IsProbe)
             {
                 window.ShowInTaskbar = false;
