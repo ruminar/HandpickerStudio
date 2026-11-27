@@ -12,8 +12,8 @@ public sealed partial class PreviewCache
 {
     private const string CacheNamespace = "HandpickerStudio-previews-v1";
     private const string OwnerFile = ".handpickerstudio-owner";
-    private const int LegacyListDecodeLimit = 280;
-    private const int LegacyTileDecodeLimit = 420;
+    public const int ListDecodeLimit = 280;
+    public const int TileDecodeLimit = 420;
     private readonly string root;
     private readonly Guid project;
     private readonly Guid owner;
@@ -30,7 +30,7 @@ public sealed partial class PreviewCache
         var version = ImageVersion.Read(original);
         string versionKey = VersionKey(original, version, limit);
         // The path prefix lets cleanup find all versions and sizes of a removed image.
-        string key = $"{PathKey(original)}-{versionKey}";
+        string key = CacheKey(original, versionKey);
         var cached = stopped ? null : FindPreview(key) ?? FindPreview(versionKey);
         if (cached is not null)
             return cached;
@@ -45,6 +45,8 @@ public sealed partial class PreviewCache
 
     private static string PathKey(string path) => Hash(path.ToUpperInvariant());
 
+    private static string CacheKey(string path, string versionKey) => $"{PathKey(path)}-{versionKey}";
+
     private static string VersionKey(string path, ImageVersion version, int limit) =>
         Hash($"{path.ToUpperInvariant()}\n{version.Length}\n{version.Created}\n{version.Modified}\n{limit}");
 
@@ -58,6 +60,13 @@ public sealed partial class PreviewCache
             var original = Capture(path);
             remove();
             removed.Add(original);
+        }
+
+        internal void AfterMoving(string path, string destination, string destinationRoot, Func<FileStamp> move)
+        {
+            var original = Capture(path);
+            var stamp = move();
+            removed.Add(original with { Destination = new(destination, destinationRoot, stamp) });
         }
 
         internal void MoveArchiveFolder(string source, string destination)
@@ -102,35 +111,81 @@ public sealed partial class PreviewCache
             if (!IsRegular(directory, directory: true))
                 return;
 
-            var obsoleteKeys = new HashSet<string>(StringComparer.Ordinal);
+            var obsoleteKeys = new Dictionary<string, ObsoletePreview>(StringComparer.Ordinal);
             foreach (var source in removed)
             {
                 try
                 {
                     if (!IsMissing(source.Path))
                         continue;
-                    obsoleteKeys.Add(PathKey(source.Path));
+                    string? listKey = null;
+                    string? tileKey = null;
                     if (source.Version is { } version)
                     {
-                        obsoleteKeys.Add(VersionKey(source.Path, version, LegacyListDecodeLimit));
-                        obsoleteKeys.Add(VersionKey(source.Path, version, LegacyTileDecodeLimit));
+                        listKey = VersionKey(source.Path, version, ListDecodeLimit);
+                        tileKey = VersionKey(source.Path, version, TileDecodeLimit);
                     }
+                    var preview = new ObsoletePreview(source.Destination, listKey, tileKey);
+                    obsoleteKeys[PathKey(source.Path)] = preview;
+                    if (listKey is not null)
+                        obsoleteKeys[listKey] = preview;
+                    if (tileKey is not null)
+                        obsoleteKeys[tileKey] = preview;
                 }
                 catch (Exception error) when (IsCacheError(error)) { problems.Add($"{source.Path} {error.Message}"); }
             }
             if (obsoleteKeys.Count == 0)
                 return;
 
-            foreach (string file in Directory.EnumerateFiles(directory))
+            bool? mayTransfer = null;
+            foreach (string file in Directory.GetFiles(directory))
             {
                 string name = Path.GetFileName(file);
-                if (!GeneratedName().IsMatch(name) || !obsoleteKeys.Contains(name[..64]))
+                if (!GeneratedName().IsMatch(name) || !obsoleteKeys.TryGetValue(name[..64], out var preview))
                     continue;
+                if (preview.Destination is { } destination && ReadDecodeLimit(name, preview) is { } limit)
+                {
+                    try
+                    {
+                        mayTransfer ??= !stopped && settings.CanWritePreviewCache(owner);
+                        if (mayTransfer.Value && TransferPreview(file, directory, destination, limit))
+                            continue;
+                    }
+                    catch (Exception error) when (IsCacheError(error)) { problems.Add($"{file} {error.Message}"); }
+                }
                 try { DeletePreview(file, directory); }
                 catch (Exception error) when (IsCacheError(error)) { problems.Add($"{file} {error.Message}"); }
             }
         }
         finally { mutex.ReleaseMutex(); }
+    }
+
+    private static int? ReadDecodeLimit(string name, ObsoletePreview preview)
+    {
+        if (!name.EndsWith(".png", StringComparison.Ordinal))
+            return null;
+        // Both current and legacy names end in the version hash before the extension.
+        var key = name.AsSpan(name.Length - 68, 64);
+        if (key.Equals(preview.ListKey, StringComparison.Ordinal))
+            return ListDecodeLimit;
+        if (key.Equals(preview.TileKey, StringComparison.Ordinal))
+            return TileDecodeLimit;
+        return null;
+    }
+
+    private static bool TransferPreview(string file, string directory, MovedImage destination, int limit)
+    {
+        using var image = VerifiedFile.Open(destination.Path, destination.Root, destination.Stamp, forMove: true);
+        var version = ImageVersion.Read(destination.Path);
+        string key = CacheKey(destination.Path, VersionKey(destination.Path, version, limit));
+        string newFile = Path.Combine(directory, key + ".png");
+        if (IsRegular(newFile, directory: false))
+            return false;
+        if (!IsRegular(file, directory: false))
+            return true;
+
+        using var preview = VerifiedFile.Open(file, directory, forMove: true);
+        return preview.TryRename(newFile);
     }
 
     private static bool IsMissing(string path)
@@ -310,7 +365,9 @@ public sealed partial class PreviewCache
     [GeneratedRegex(@"\A(?:[0-9A-F]{64}-)?[0-9A-F]{64}(?:\.png|-[0-9a-f]{32}\.tmp)\z", RegexOptions.CultureInvariant)]
     private static partial Regex GeneratedName();
 
-    private readonly record struct RemovedSource(string Path, ImageVersion? Version);
+    private readonly record struct RemovedSource(string Path, ImageVersion? Version, MovedImage? Destination = null);
+    private readonly record struct MovedImage(string Path, string Root, FileStamp Stamp);
+    private readonly record struct ObsoletePreview(MovedImage? Destination, string? ListKey, string? TileKey);
 
     private readonly record struct ImageVersion(long Length, long Created, long Modified)
     {

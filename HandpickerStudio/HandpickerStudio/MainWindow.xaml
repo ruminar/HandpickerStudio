@@ -13,7 +13,7 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <Border Background="{DynamicResource CanvasBrush}" CornerRadius="4" Height="94">
-                        <local:ImagePreview FilePath="{Binding FullPath}" DecodeLimit="280" Stretch="Uniform"
+                        <local:ImagePreview FilePath="{Binding FullPath}" DecodeLimit="{x:Static local:PreviewCache.ListDecodeLimit}" Stretch="Uniform"
                                             Cache="{Binding DataContext.GalleryCache, RelativeSource={RelativeSource AncestorType=Window}}" />
                     </Border>
                     <StackPanel Grid.Column="1" Margin="12,0,47,0" VerticalAlignment="Center">
@@ -41,7 +41,7 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <Border Background="{DynamicResource CanvasBrush}" CornerRadius="3">
-                        <local:ImagePreview FilePath="{Binding FullPath}" DecodeLimit="420" Stretch="Uniform"
+                        <local:ImagePreview FilePath="{Binding FullPath}" DecodeLimit="{x:Static local:PreviewCache.TileDecodeLimit}" Stretch="Uniform"
                                             Cache="{Binding DataContext.GalleryCache, RelativeSource={RelativeSource AncestorType=Window}}" />
                     </Border>
                     <StackPanel Grid.Row="1" Margin="2,4,2,0">
@@ -53,7 +53,7 @@
         </DataTemplate>
         <DataTemplate x:Key="SimpleImageTileTemplate">
             <Border Background="{DynamicResource CanvasBrush}" CornerRadius="3" Margin="2">
-                <local:ImagePreview FilePath="{Binding FullPath}" DecodeLimit="420" Stretch="Uniform"
+                <local:ImagePreview FilePath="{Binding FullPath}" DecodeLimit="{x:Static local:PreviewCache.TileDecodeLimit}" Stretch="Uniform"
                                     Cache="{Binding DataContext.GalleryCache, RelativeSource={RelativeSource AncestorType=Window}}" />
             </Border>
         </DataTemplate>

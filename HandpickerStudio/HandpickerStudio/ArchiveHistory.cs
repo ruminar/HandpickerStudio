@@ -68,8 +68,8 @@ internal static partial class ArchiveHistory
                 WriteReceipt(receiptPath, receipt);
                 try
                 {
-                    MoveWithCache(cleanup, image.FullPath, () => ImageOperations.MoveFile(file, image.FullPath, destination, confirmCopy,
-                        stamp => WriteReceipt(receiptPath, receipt with { ArchiveStamp = stamp }), preserveLastWrite: true));
+                    MoveWithCache(cleanup, file, image.FullPath, destination, ArchiveDirectory.GetPath(project.Id, image.Root),
+                        confirmCopy, stamp => WriteReceipt(receiptPath, receipt with { ArchiveStamp = stamp }));
                 }
                 catch (Exception error) when (IsFileError(error))
                 {
@@ -145,8 +145,7 @@ internal static partial class ArchiveHistory
                 using (var file = VerifiedFile.Open(receipt.ArchivePath, archive, receipt.ArchiveStamp, forMove: true))
                 {
                     ImageOperations.CreateBelow(output, Path.GetDirectoryName(receipt.OutputPath)!);
-                    MoveWithCache(cleanup, receipt.ArchivePath, () =>
-                        ImageOperations.MoveFile(file, receipt.ArchivePath, receipt.OutputPath, confirmCopy, preserveLastWrite: true));
+                    MoveWithCache(cleanup, file, receipt.ArchivePath, receipt.OutputPath, output, confirmCopy);
                 }
                 result.Moved++;
                 sources.Add(new(Path.GetDirectoryName(receipt.ArchivePath)!, archive, archiveLocation, receipt.CheckpointPath));
@@ -173,12 +172,25 @@ internal static partial class ArchiveHistory
         catch (Exception error) when (error is FileNotFoundException or DirectoryNotFoundException) { return false; }
     }
 
-    private static void MoveWithCache(PreviewCache.RemovalBatch? cleanup, string path, Action move)
+    private static void MoveWithCache(PreviewCache.RemovalBatch? cleanup, VerifiedFile file, string source, string destination,
+        string destinationRoot, Func<string, string, bool> confirmCopy, Action<FileStamp>? recordCopy = null)
     {
         if (cleanup is null)
-            move();
-        else
-            cleanup.AfterRemoving(path, move);
+        {
+            ImageOperations.MoveFile(file, source, destination, confirmCopy, recordCopy, preserveLastWrite: true);
+            return;
+        }
+
+        cleanup.AfterMoving(source, destination, destinationRoot, () =>
+        {
+            FileStamp stamp = file.Stamp;
+            ImageOperations.MoveFile(file, source, destination, confirmCopy, copied =>
+            {
+                recordCopy?.Invoke(copied);
+                stamp = copied;
+            }, preserveLastWrite: true);
+            return stamp;
+        });
     }
 
     private static void WriteReceipt(string path, Receipt receipt)
