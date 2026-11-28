@@ -105,7 +105,9 @@ internal static partial class ArchiveHistory
     private static void Restore(string history, Project[] projects, Project project, HashSet<string>? selection,
         Func<string, string, bool> confirmCopy, PreviewCache.RemovalBatch? cleanup, Result result)
     {
+        var referenceRoots = ReferenceRootCheck.Inspect(project, CancellationToken.None);
         var roots = project.Roots.Where(root => root.Enabled).ToDictionary(root => root.Id);
+        var reported = new HashSet<string>(StringComparer.Ordinal);
         var sources = new HashSet<CleanupSource>();
         foreach (string receiptPath in Directory.EnumerateFiles(history, "*.json"))
         {
@@ -119,6 +121,14 @@ internal static partial class ArchiveHistory
                     continue;
                 if (!roots.TryGetValue(receipt.RootId, out var root))
                     throw new IOException($"参照ルートが無効か、登録されていません。{receipt.OutputPath}");
+                string? blocked = referenceRoots.Conflicts.FirstOrDefault(conflict => conflict.Affects(root.Id))?.Message ??
+                    referenceRoots.OutputErrors.GetValueOrDefault(root.Id) ?? referenceRoots.ArchiveErrors.GetValueOrDefault(root.Id);
+                if (blocked is not null)
+                {
+                    if (reported.Add(blocked))
+                        result.Report(blocked);
+                    continue;
+                }
 
                 string archive = ArchiveDirectory.GetPath(project.Id, root);
                 string output = root.OutputPath;

@@ -256,7 +256,8 @@ internal static partial class CatalogService
     {
         List<ImageEntry> images = [];
         List<RootStatus> roots = [];
-        List<string> warnings = [];
+        var referenceRoots = ReferenceRootCheck.Inspect(active, token);
+        var warnings = referenceRoots.Conflicts.Select(conflict => conflict.Message).ToList();
         foreach (ImageRoot root in active.Roots)
         {
             token.ThrowIfCancellationRequested();
@@ -265,55 +266,66 @@ internal static partial class CatalogService
                 roots.Add(new(root, "無効・接続未確認"));
                 continue;
             }
+            if (referenceRoots.Conflicts.Any(conflict => conflict.Affects(root.Id)))
+            {
+                roots.Add(new(root, "参照先の実体が重複しています"));
+                continue;
+            }
+
+            int previousWarnings = warnings.Count;
+            bool outputAvailable = !referenceRoots.OutputErrors.TryGetValue(root.Id, out var outputError);
+            if (outputError is not null)
+                warnings.Add(outputError);
+            if (referenceRoots.ArchiveErrors.TryGetValue(root.Id, out var archiveError))
+                warnings.Add(archiveError);
+            else if (includeArchive)
+                ReadArchive(active.Id, root, catalog.Checkpoints, images, warnings, outputAvailable, token);
+            if (!outputAvailable || (!includeArchive && archiveError is not null))
+            {
+                roots.Add(new(root, !outputAvailable ? "Outputを確認できません" : "Archiveを確認できません"));
+                continue;
+            }
 
             string outputPath = catalog.OutputPath(root.OutputPath);
             var held = holds.Where(item => WorkspacePaths.Overlap(catalog.OutputPath(item.OutputPath), outputPath))
                 .ToLookup(item => item.Label, StringComparer.OrdinalIgnoreCase);
             var unconfirmed = catalog.UnconfirmedOutputs.Where(path => WorkspacePaths.Overlap(path, outputPath)).ToArray();
-            int previousWarnings = warnings.Count;
-            bool outputAvailable = DirectoryAvailable(root.OutputPath, error => warnings.Add($"{root.Name}のOutput: {error}"));
-            if (includeArchive)
-                ReadArchive(active.Id, root, catalog.Checkpoints, images, warnings, outputAvailable, token);
-            if (outputAvailable)
+            foreach (string path in EnumerateFiles(root.OutputPath, error => warnings.Add($"{root.Name}のOutput: {error}"), token))
             {
-                foreach (string path in EnumerateFiles(root.OutputPath, error => warnings.Add($"{root.Name}のOutput: {error}"), token))
+                if (!IsImage(path))
+                    continue;
+
+                string relativePath = RelativePath(root.OutputPath, path);
+                string physicalPath = Path.Combine(outputPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
+                var labels = MatchingLabels(relativePath, catalog.Labels, held);
+                var matches = labels.SelectMany(label => catalog.Labels[label]).Distinct().Where(checkpoint => checkpoint.Project.Roots
+                    .Any(source => WorkspacePaths.Within(physicalPath, catalog.OutputPath(source.OutputPath)))).ToArray();
+                var imageHolds = labels.SelectMany(label => held[label])
+                    .Where(item => WorkspacePaths.Within(physicalPath, catalog.OutputPath(item.OutputPath))).ToArray();
+                bool isHeld = imageHolds.Length != 0;
+                bool isComplete = !unconfirmed.Any(folder => WorkspacePaths.Within(physicalPath, folder));
+                bool hasUniqueOwner = !isHeld && isComplete && matches.Length == 1;
+                if (hasUniqueOwner && matches[0].Project.Id != active.Id)
+                    continue;
+
+                string? owner = hasUniqueOwner ? matches[0].RelativePath : null;
+                bool onlyLegacy = isHeld && imageHolds.All(item => !item.Scoped);
+                string? reason = (owner, isHeld, onlyLegacy, matches.Length, isComplete) switch
                 {
-                    if (!IsImage(path))
-                        continue;
-
-                    string relativePath = RelativePath(root.OutputPath, path);
-                    string physicalPath = Path.Combine(outputPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
-                    var labels = MatchingLabels(relativePath, catalog.Labels, held);
-                    var matches = labels.SelectMany(label => catalog.Labels[label]).Distinct().Where(checkpoint => checkpoint.Project.Roots
-                        .Any(source => WorkspacePaths.Within(physicalPath, catalog.OutputPath(source.OutputPath)))).ToArray();
-                    var imageHolds = labels.SelectMany(label => held[label])
-                        .Where(item => WorkspacePaths.Within(physicalPath, catalog.OutputPath(item.OutputPath))).ToArray();
-                    bool isHeld = imageHolds.Length != 0;
-                    bool isComplete = !unconfirmed.Any(folder => WorkspacePaths.Within(physicalPath, folder));
-                    bool hasUniqueOwner = !isHeld && isComplete && matches.Length == 1;
-                    if (hasUniqueOwner && matches[0].Project.Id != active.Id)
-                        continue;
-
-                    string? owner = hasUniqueOwner ? matches[0].RelativePath : null;
-                    bool onlyLegacy = isHeld && imageHolds.All(item => !item.Scoped);
-                    string? reason = (owner, isHeld, onlyLegacy, matches.Length, isComplete) switch
-                    {
-                        (not null, _, _, _, _) => null,
-                        (_, true, true, _, _) => "旧版のラベル重複記録により保留",
-                        (_, true, _, _, _) => "ラベルの重複により保留",
-                        (_, _, _, > 1, _) => "複数のCheckpointが一致",
-                        (_, _, _, _, false) => "照合対象の一覧が未確認",
-                        _ => "一致するCheckpointなし"
-                    };
-                    if (reason is not null && matches.Length > 0)
-                        reason += " · " + string.Join("、", matches.Select(item => $"{item.Project.Name}/{item.RelativePath}"));
-                    var legacyHolds = onlyLegacy && isComplete && matches is [var current] && current.Project.Id == active.Id ? imageHolds : null;
-                    images.Add(new(path, relativePath, $"{root.Name} / Output", owner, reason, root, false,
-                        matches.Where(item => item.Project.Id == active.Id).Select(item => item.RelativePath).ToArray(), legacyHolds));
-                }
+                    (not null, _, _, _, _) => null,
+                    (_, true, true, _, _) => "旧版のラベル重複記録により保留",
+                    (_, true, _, _, _) => "ラベルの重複により保留",
+                    (_, _, _, > 1, _) => "複数のCheckpointが一致",
+                    (_, _, _, _, false) => "照合対象の一覧が未確認",
+                    _ => "一致するCheckpointなし"
+                };
+                if (reason is not null && matches.Length > 0)
+                    reason += " · " + string.Join("、", matches.Select(item => $"{item.Project.Name}/{item.RelativePath}"));
+                var legacyHolds = onlyLegacy && isComplete && matches is [var current] && current.Project.Id == active.Id ? imageHolds : null;
+                images.Add(new(path, relativePath, $"{root.Name} / Output", owner, reason, root, false,
+                    matches.Where(item => item.Project.Id == active.Id).Select(item => item.RelativePath).ToArray(), legacyHolds));
             }
-            roots.Add(new(root, !outputAvailable ? "Outputに接続できません" :
-                previousWarnings == warnings.Count ? "接続中" : "一部取得できません"));
+            roots.Add(new(root, previousWarnings == warnings.Count ? "接続中" : "一部取得できません"));
         }
 
         return new(images.OrderBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase)

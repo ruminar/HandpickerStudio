@@ -125,7 +125,7 @@ public partial class ProjectEditorWindow : Window
                         detected.SelectedPath, modelFolders));
                 }
             }
-            if (!await ConfirmArchiveLocationsAsync(edited))
+            if (!await ValidateReferenceRootsAsync(edited))
                 return;
             Result = edited;
             DialogResult = true;
@@ -137,22 +137,26 @@ public partial class ProjectEditorWindow : Window
         finally { SaveButton.IsEnabled = true; }
     }
 
-    private async Task<bool> ConfirmArchiveLocationsAsync(Project edited)
+    private async Task<bool> ValidateReferenceRootsAsync(Project edited)
     {
         var previous = (originalProject?.Roots ?? []).ToDictionary(root => root.Id);
         var changed = edited.Roots.Where(root => root.Enabled &&
             (!previous.TryGetValue(root.Id, out var before) || !before.Enabled ||
              !string.Equals(root.OutputPath, before.OutputPath, StringComparison.OrdinalIgnoreCase) ||
              !string.Equals(root.ArchivePath, before.ArchivePath, StringComparison.OrdinalIgnoreCase))).ToArray();
-        if (changed.Length == 0)
-            return true;
-
         IsEnabled = false;
         ImageRoot[] warnings;
         try
         {
-            warnings = await Task.Run(() => changed.Where(root =>
-                ArchiveDirectory.MayRequireCopy(root.OutputPath, ArchiveDirectory.GetPath(edited.Id, root))).ToArray());
+            warnings = await Task.Run(() =>
+            {
+                var check = ReferenceRootCheck.Inspect(edited, CancellationToken.None, includeDisabledOutputs: true);
+                if (check.Conflicts.FirstOrDefault() is { } conflict)
+                    throw new ArgumentException(conflict.Message);
+
+                return changed.Where(root => ArchiveDirectory.MayRequireCopy(root.OutputPath,
+                    ArchiveDirectory.GetPath(edited.Id, root))).ToArray();
+            });
         }
         finally { IsEnabled = true; }
         if (!initialized)

@@ -27,8 +27,6 @@ internal static class ImageOperations
 
     public static void Recycle(ImageTarget target)
     {
-        if (target.Image.CheckpointPath is null)
-            throw new IOException("所属未確定の画像は振り分けを先に行ってください。");
         RecycleBin.Send(target.Image.FullPath, () =>
         {
             using var file = VerifiedFile.Open(target.Image.FullPath, target.RootPath, target.Stamp);

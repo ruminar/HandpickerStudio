@@ -95,19 +95,21 @@ public partial class ImageViewerWindow : Window
 
     private void PrepareMenu(object sender, ContextMenuEventArgs e)
     {
-        ViewerRecycle.IsEnabled = !operationRunning && images.Count > 0 && images[currentIndex].CheckpointPath is not null;
-        ViewerThumbnail.IsEnabled = ViewerRecycle.IsEnabled && checkpoint is not null;
+        ViewerRecycle.IsEnabled = !operationRunning && images.Count > 0;
+        ViewerThumbnail.IsEnabled = ViewerRecycle.IsEnabled && checkpoint is not null && images[currentIndex].CheckpointPath is not null;
     }
 
     private void ConfirmClose(object? sender, CancelEventArgs e) => e.Cancel = operationRunning;
 
     private async void RecycleCurrent(object sender, RoutedEventArgs e)
     {
-        if (operationRunning || images.Count == 0 || images[currentIndex].CheckpointPath is null)
+        if (operationRunning || images.Count == 0)
             return;
 
         int removing = currentIndex;
         ImageEntry image = images[removing];
+        if (!MainWindow.ConfirmImageRecycle(this, [image]))
+            return;
         await RunAsync(async () =>
         {
             string? warning = await RecycleBin.RunOnSta(() =>
@@ -136,7 +138,7 @@ public partial class ImageViewerWindow : Window
 
     private async void SetCurrentThumbnail(object sender, RoutedEventArgs e)
     {
-        if (operationRunning || checkpoint is null || images.Count == 0)
+        if (operationRunning || checkpoint is null || images.Count == 0 || images[currentIndex].CheckpointPath is null)
             return;
         ImageEntry image = images[currentIndex];
         await RunAsync(async () =>

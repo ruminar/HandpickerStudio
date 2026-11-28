@@ -265,7 +265,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
                 item.ProjectId != preference.ProjectId), preference]
         };
 
-    public async Task ReloadAsync(bool keepGallery = false)
+    public async Task ReloadAsync(bool keepGallery = false, Action? beforeGalleryUpdate = null)
     {
         currentLoad?.Cancel();
         using var load = new CancellationTokenSource();
@@ -315,6 +315,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
             Roots = scan.Roots;
             scanWarnings = catalog.Warnings.Concat(scan.Warnings).ToArray();
             NotifyScan();
+            beforeGalleryUpdate?.Invoke();
             UpdateGallery();
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }

@@ -17,7 +17,7 @@ internal static class ArchiveDirectory
     {
         // An archive base can be a mapped drive or a link. Compare the resolved locations
         // before creating anything, and keep links out of Studio's own namespace.
-        if (WorkspacePaths.Overlap(ResolvePath(root.OutputPath, token), ResolvePath(root.ArchivePath, token)))
+        if (WorkspacePaths.Overlap(ResolvePhysicalPath(root.OutputPath, token), ResolvePhysicalPath(root.ArchivePath, token, allowMissing: true)))
             throw new IOException("OutputとArchiveが同じ領域を参照しています。");
 
         RequireManagedDirectory(Path.GetDirectoryName(archivePath)!);
@@ -33,14 +33,26 @@ internal static class ArchiveDirectory
             throw new IOException($"Archiveの管理フォルダーを利用できません。{path}");
     }
 
-    public static string ResolvePath(string path, CancellationToken token = default) => ResolvePath(path, token, identifyVolume: false);
+    public static string ResolvePath(string path, CancellationToken token = default) => ResolvePath(path, token, ResolveExistingPath);
+
+    internal static string ResolvePhysicalPath(string path, CancellationToken token, bool allowMissing = false)
+    {
+        if (allowMissing)
+            return ResolvePath(path, token, ResolvePhysicalDirectory);
+
+        token.ThrowIfCancellationRequested();
+        if (!File.GetAttributes(path).HasFlag(FileAttributes.Directory))
+            throw new IOException($"フォルダーではありません。{path}");
+
+        return Path.TrimEndingDirectorySeparator(ResolvePhysicalDirectory(path));
+    }
 
     internal static bool MayRequireCopy(string source, string destination)
     {
         try
         {
-            string sourcePath = ResolvePath(source, CancellationToken.None, identifyVolume: true);
-            string destinationPath = ResolvePath(destination, CancellationToken.None, identifyVolume: true);
+            string sourcePath = ResolvePath(source, CancellationToken.None, ResolveStoragePath);
+            string destinationPath = ResolvePath(destination, CancellationToken.None, ResolveStoragePath);
             return !SameStorageRoot(sourcePath, destinationPath);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
@@ -53,7 +65,7 @@ internal static class ArchiveDirectory
     private static bool SameStorageRoot(string source, string destination) =>
         string.Equals(Path.GetPathRoot(source), Path.GetPathRoot(destination), StringComparison.OrdinalIgnoreCase);
 
-    private static string ResolvePath(string path, CancellationToken token, bool identifyVolume)
+    private static string ResolvePath(string path, CancellationToken token, Func<string, string> resolveExisting)
     {
         var missing = new Stack<string>();
         for (DirectoryInfo? directory = new(path); directory is not null; directory = directory.Parent)
@@ -64,7 +76,7 @@ internal static class ArchiveDirectory
                 if (!attributes.HasFlag(FileAttributes.Directory))
                     throw new IOException($"フォルダーではありません。{directory.FullName}");
 
-                return Path.TrimEndingDirectorySeparator(Path.Combine([ResolveExistingPath(directory.FullName, identifyVolume), .. missing]));
+                return Path.TrimEndingDirectorySeparator(Path.Combine([resolveExisting(directory.FullName), .. missing]));
             }
             missing.Push(directory.Name);
         }
@@ -80,6 +92,18 @@ internal static class ArchiveDirectory
 
     public static string ResolveExistingPath(string path) => ResolveExistingPath(path, identifyVolume: false);
 
+    private static string ResolveStoragePath(string path) => ResolveExistingPath(path, identifyVolume: true);
+
+    private static string ResolvePhysicalDirectory(string path)
+    {
+        string resolved = ResolveStoragePath(path);
+        if (LocalSmbShare.GetLocalPath(resolved) is not { } local)
+            return resolved;
+
+        try { return ResolveStoragePath(local); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return resolved; }
+    }
+
     private static string ResolveExistingPath(string path, bool identifyVolume)
     {
         const uint OpenDirectory = 0x02000000;
@@ -89,8 +113,31 @@ internal static class ArchiveDirectory
             throw ResolutionError(path);
 
         const uint volumeNameGuid = 1;
-        // Local mounted volumes have GUID paths. Network shares use the resolved UNC root.
-        return (identifyVolume ? ReadHandlePath(handle, volumeNameGuid) : null) ?? ResolveHandlePath(handle, path);
+        if (!identifyVolume)
+            return ResolveHandlePath(handle, path);
+
+        return ReadHandlePath(handle, volumeNameGuid) ?? ResolveMappedDrive(ResolveHandlePath(handle, path));
+    }
+
+    private static string ResolveMappedDrive(string path)
+    {
+        if (!path.StartsWith(@"\\?\", StringComparison.Ordinal) || path.Length < 7 || path[5] != ':')
+            return path;
+
+        var remote = new StringBuilder(512);
+        int length = remote.Capacity;
+        int status = WNetGetConnection(path[4..6], remote, ref length);
+        const int MoreData = 234;
+        if (status == MoreData)
+        {
+            remote.EnsureCapacity(length);
+            status = WNetGetConnection(path[4..6], remote, ref length);
+        }
+
+        string share = remote.ToString();
+        return status == 0 && share.StartsWith(@"\\", StringComparison.Ordinal)
+            ? @"\\?\UNC\" + share[2..].TrimEnd('\\') + path[6..]
+            : path;
     }
 
     public static string ResolveHandlePath(SafeFileHandle handle, string path) =>
@@ -117,4 +164,7 @@ internal static class ArchiveDirectory
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern uint GetFinalPathNameByHandle(SafeFileHandle file, StringBuilder path, uint capacity, uint flags);
+
+    [DllImport("mpr.dll", CharSet = CharSet.Unicode)]
+    private static extern int WNetGetConnection(string localName, StringBuilder remoteName, ref int length);
 }

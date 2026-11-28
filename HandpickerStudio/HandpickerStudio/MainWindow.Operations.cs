@@ -35,7 +35,7 @@ public partial class MainWindow
             return;
         }
 
-        RecycleImagesMenu.IsEnabled = images.Any(image => image.CheckpointPath is not null);
+        RecycleImagesMenu.IsEnabled = true;
         MoveImagesMenu.IsEnabled = viewModel.Projects.Any(project => project.Roots.Any(root => root.Enabled));
         ThumbnailMenu.IsEnabled = images is [{ CheckpointPath: not null }];
         ReleaseLegacyHoldsMenu.Visibility = viewModel.CanSave && images.Any(image => image.LegacyHolds is { Length: > 0 })
@@ -61,15 +61,29 @@ public partial class MainWindow
 
     private async void RecycleSelectedImages(object sender, RoutedEventArgs e)
     {
-        if (viewModel.SelectedProject is not { } project)
+        if (viewModel.IsLoading || operationRunning || viewModel.SelectedProject is not { } project)
             return;
-        var images = Gallery.SelectedItems.OfType<ImageEntry>().ToArray();
-        if (images.Length != 0)
-        {
-            var cleanup = BeginCacheCleanup();
-            await RunOperation("ごみ箱へ移動", () => ProcessImages(project, images, ImageOperations.Recycle, cleanup),
-                shell: true, cleanup: cleanup);
-        }
+        var images = Gallery.SelectedItems.OfType<ImageEntry>()
+            .DistinctBy(image => image.FullPath, StringComparer.OrdinalIgnoreCase).ToArray();
+        if (images.Length == 0 || !ConfirmImageRecycle(this, images))
+            return;
+
+        var cleanup = BeginCacheCleanup();
+        await RunOperation("ごみ箱へ移動", () => ProcessImages(project, images, ImageOperations.Recycle, cleanup),
+            shell: true, reload: false, cleanup: cleanup);
+        await ReloadGalleryAfterRecycleAsync();
+    }
+
+    internal static bool ConfirmImageRecycle(Window owner, ImageEntry[] images)
+    {
+        int unresolved = images.Count(image => image.CheckpointPath is null);
+        if (unresolved == 0)
+            return true;
+
+        string paths = string.Join(Environment.NewLine, images.Select(image => image.FullPath));
+        string message = $"選択した {images.Length} 枚をWindowsのごみ箱へ移動します（所属未確定 {unresolved} 枚）。" +
+            $"{Environment.NewLine}{Environment.NewLine}{paths}";
+        return ShowReport(owner, "ごみ箱へ移動の確認", message, "ごみ箱へ移動");
     }
 
     private async void MoveSelectedImages(object sender, RoutedEventArgs e)

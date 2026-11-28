@@ -76,7 +76,7 @@
                     <Button Content="登録解除" Click="RemoveProject" IsEnabled="{Binding CanEditProject}" Margin="0,0,6,0" />
                     <Button Content="更新" Click="Reload" Margin="0,0,6,0" />
                     <Button x:Name="AppUpdateButton" Content="アプリの更新を確認" Click="CheckForAppUpdate" Margin="0,0,6,0" />
-                    <Button Content="表示設定" Click="EditAppearance" IsEnabled="{Binding CanSave}" />
+                    <Button Content="アプリの設定" Click="EditAppearance" IsEnabled="{Binding CanSave}" />
                 </StackPanel>
                 <ComboBox x:Name="ProjectPicker" ItemsSource="{Binding Projects}" DisplayMemberPath="Name"
                           SelectedItem="{Binding SelectedProject, Mode=TwoWay}" AutomationProperties.Name="プロジェクト"
@@ -187,11 +187,12 @@
                     <Grid>
                         <ListBox x:Name="Gallery" ItemsSource="{Binding Images}" BorderThickness="0" SelectionMode="Extended"
                                  Background="{DynamicResource PanelBrush}" Foreground="{DynamicResource TextBrush}"
-                                 PreviewMouseDoubleClick="OpenImage" PreviewMouseWheel="ResizeTilesWithWheel" KeyDown="OpenImageWithKey"
+                                 PreviewMouseDoubleClick="OpenImage" PreviewMouseWheel="ScrollGalleryWithWheel" KeyDown="OpenImageWithKey"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  PreviewMouseRightButtonDown="ImageMenuTarget" ContextMenuOpening="PrepareImageMenu"
                                  ScrollViewer.CanContentScroll="True"
-                                 VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling">
+                                 VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                 VirtualizingPanel.ScrollUnit="Item">
                             <ListBox.ContextMenu>
                                 <ContextMenu>
                                     <MenuItem x:Name="RecycleImagesMenu" Header="ごみ箱へ移動" InputGestureText="Delete" Click="RecycleSelectedImages" />

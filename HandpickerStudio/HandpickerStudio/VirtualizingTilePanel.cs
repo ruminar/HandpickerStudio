@@ -40,6 +40,10 @@ public sealed class VirtualizingTilePanel : VirtualizingPanel, IScrollInfo
     public double VerticalOffset { get; private set; }
     public ScrollViewer? ScrollOwner { get; set; }
 
+    internal int FirstVisibleIndex => tileHeight > 0 ? (int)(VerticalOffset / tileHeight) * columns : 0;
+
+    internal double RowOffset(int index) => index / columns * tileHeight;
+
     protected override Size MeasureOverride(Size availableSize)
     {
         var owner = ItemsControl.GetItemsOwner(this);
@@ -49,7 +53,7 @@ public sealed class VirtualizingTilePanel : VirtualizingPanel, IScrollInfo
         int count = owner.Items.Count;
         double width = double.IsPositiveInfinity(availableSize.Width) ? TileSize : availableSize.Width;
         double anchorRow = tileHeight > 0 ? VerticalOffset / tileHeight : 0;
-        int firstVisible = (int)anchorRow * columns;
+        int firstVisible = FirstVisibleIndex;
         tileWidth = Math.Min(width, TileSize);
         int newColumns = Math.Max(1, (int)(width / Math.Max(1, tileWidth)));
         double newTileHeight = Math.Max(1, ImageOnly ? tileWidth : tileWidth * 2 / 3 + 38);
@@ -185,8 +189,9 @@ public sealed class VirtualizingTilePanel : VirtualizingPanel, IScrollInfo
 
     public void LineUp() => SetVerticalOffset(VerticalOffset - 24);
     public void LineDown() => SetVerticalOffset(VerticalOffset + 24);
-    public void MouseWheelUp() => SetVerticalOffset(VerticalOffset - 72);
-    public void MouseWheelDown() => SetVerticalOffset(VerticalOffset + 72);
+    internal void ScrollRows(int rows) => SetVerticalOffset(VerticalOffset + rows * tileHeight);
+    public void MouseWheelUp() => ScrollRows(-1);
+    public void MouseWheelDown() => ScrollRows(1);
     public void PageUp() => SetVerticalOffset(VerticalOffset - ViewportHeight);
     public void PageDown() => SetVerticalOffset(VerticalOffset + ViewportHeight);
     public void SetHorizontalOffset(double offset) { }

@@ -11,7 +11,6 @@ namespace HandpickerStudio;
 public partial class MainWindow : Window
 {
     private readonly MainViewModel viewModel = new(new SettingsStore(WorkspacePaths.SettingsPath, readOnly: App.IsProbe));
-    private int tileWheelRemainder;
     private bool wasMaximized;
 
     public MainWindow()
@@ -126,7 +125,7 @@ public partial class MainWindow : Window
         if (layout == viewModel.GalleryView)
             return;
 
-        tileWheelRemainder = 0;
+        galleryWheelRemainder = 0;
         var selection = Gallery.SelectedItems.Cast<ImageEntry>().ToArray();
         viewModel.ChangeGalleryView(layout);
         if (selection.Length == 0)
@@ -141,23 +140,6 @@ public partial class MainWindow : Window
                 Gallery.SelectedItems.Add(image);
         }
         Gallery.ScrollIntoView(selection[0]);
-    }
-
-    private void ResizeTilesWithWheel(object sender, MouseWheelEventArgs e)
-    {
-        if (viewModel.GalleryView == GalleryLayout.List || !Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
-        {
-            tileWheelRemainder = 0;
-            return;
-        }
-
-        const int wheelDelta = 120;
-        tileWheelRemainder += e.Delta;
-        int steps = tileWheelRemainder / wheelDelta;
-        tileWheelRemainder %= wheelDelta;
-        if (steps != 0)
-            viewModel.ChangeTileSize(viewModel.TileSize + steps * 24);
-        e.Handled = true;
     }
 
     private void ShowUnresolved(object sender, RoutedEventArgs e) => viewModel.ShowUnresolved();
@@ -204,7 +186,7 @@ public partial class MainWindow : Window
             var viewer = new ImageViewerWindow(images, index, project, viewModel.SelectedCheckpoint, viewModel.GalleryCache) { Owner = this };
             viewer.ShowDialog();
             if (viewer.ImagesChanged)
-                await viewModel.ReloadAsync();
+                await ReloadGalleryAfterRecycleAsync();
         }
     }
 
@@ -212,11 +194,13 @@ public partial class MainWindow : Window
 
     private void ShowCollisions(object sender, RoutedEventArgs e) => ShowReport("Checkpoint名の重複", viewModel.CollisionReport);
 
-    private void ShowReport(string title, string text)
+    private void ShowReport(string title, string text) => ShowReport(this, title, text);
+
+    private static bool ShowReport(Window owner, string title, string text, string? action = null)
     {
         var report = new Window
         {
-            Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner, Title = title,
+            Owner = owner, WindowStartupLocation = WindowStartupLocation.CenterOwner, Title = title,
             Width = 720, Height = 410, MinWidth = 380, MinHeight = 250
         };
         var panel = new DockPanel { Margin = new Thickness(14) };
@@ -228,8 +212,14 @@ public partial class MainWindow : Window
             try { Clipboard.SetText(text); }
             catch (ExternalException) { MessageBox.Show(report, "クリップボードを利用できません。", title); }
         };
-        var close = new Button { Content = "閉じる", IsCancel = true };
         actions.Children.Add(copy);
+        if (action is not null)
+        {
+            var confirm = new Button { Content = action, Margin = new Thickness(0, 0, 8, 0) };
+            confirm.Click += (_, _) => report.DialogResult = true;
+            actions.Children.Add(confirm);
+        }
+        var close = new Button { Content = action is null ? "閉じる" : "キャンセル", IsCancel = true, IsDefault = action is not null };
         actions.Children.Add(close);
         DockPanel.SetDock(actions, Dock.Bottom);
         panel.Children.Add(actions);
@@ -239,6 +229,6 @@ public partial class MainWindow : Window
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalContentAlignment = VerticalAlignment.Top
         });
         report.Content = panel;
-        report.ShowDialog();
+        return report.ShowDialog() == true;
     }
 }
