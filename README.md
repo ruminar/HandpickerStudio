@@ -6,7 +6,7 @@
 
 Windows 11 x64 と **.NET 10 Windows Desktop Runtime（x64）** が必要です。Microsoftの公式ページで「.NET Desktop Runtime」のWindows x64を選んでください。 [Microsoft公式の .NET 10 ダウンロード](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)
 
-配布物はFramework-dependentのポータブルZIPです。.NETランタイムは同梱されません。書き込み可能なフォルダにZIPを展開し、`HandpickerStudio.exe` を起動してください。アプリ本体は標準ユーザー権限で利用できます。
+[GitHub Releases](https://github.com/ruminar/HandpickerStudio/releases) から `HandpickerStudio-<version>-win-x64.zip` を取得してください。配布物はFramework-dependentのポータブルZIPです。.NETランタイムは同梱されません。書き込み可能なフォルダにZIPを展開し、`HandpickerStudio.exe` を起動してください。アプリ本体は標準ユーザー権限で利用できます。
 
 ## 画像を閲覧する
 
@@ -29,12 +29,14 @@ Archive化と解除では、作成済みの画像キャッシュを移動先に�
 - 画像一覧の右クリックから、ごみ箱への移動、移動先プロジェクトの選択、代表サムネイルの設定ができます。`Ctrl` や `Shift` で複数選択できます。個別ビューワでは `Delete` キーで表示中の画像をごみ箱へ送れます。所属未確定の画像が含まれるときは、対象枚数と元の保存パスを確認できます。
 - **プロジェクトへ移動** では、移動先のプロジェクトと参照ルートを指定します。画像のファイル名と一意に一致するCheckpointのArchiveへ移動します。所属未確定の画像や複数画像にも使えます。候補がない、または複数ある画像は元の場所に残ります。代表サムネイルは選んだ元画像からJPEGを生成し、Checkpointと同じフォルダーに保存します。
 - 別のドライブやネットワーク共有にまたがる参照ルートを設定するときは、保存前に確認が出ます。画像を実際にコピーして移動する場合も実行前に確認し、コピーの完了を確認してから元画像を削除します。
-- プロジェクト間のラベル重複は、Outputが重なる範囲で判定します。旧版の保留が残り、候補が現在のプロジェクトで一意の場合は、所属を確認してから右クリックの **旧版の保留を解除…** で再照合できます。
+- プロジェクト間のラベル重複は、Outputの実体が重なる範囲で判定します。同じPCのローカルパスとSMB共有経由のパスが同じ場所を指す場合も、重複するラベルの画像は **所属未確定** に表示します。旧版の保留が残り、候補が現在のプロジェクトで一意の場合は、所属を確認してから右クリックの **旧版の保留を解除…** で再照合できます。
 - プロジェクト設定の **サムネイル** タブにある **サムネイル一括登録** で、保存済みの設定に基づいて未設定分をまとめて登録できます。Archiveを優先し、相対パス順で最初に読み込める画像を使います。登録済みのサムネイルはそのまま残ります。
-- プロジェクト設定の **アーカイブ設定** で、前日までのOutput画像をCheckpoint別に **Archive実行** し、**Archiveを開く** からエクスプローラーで成果物を取り出せます。**Archiveを戻す** では、Archive化した画像のうちArchiveに残っているものを元のOutputへ戻します。Checkpointを複数選択し、右クリックの **アーカイブ化**・**アーカイブ化解除** から対象を絞ることもできます。起動時の自動実行は既定でオフで、解除を実行するとオフになります。
+- プロジェクト設定の **アーカイブ設定** で **Archive実行** を選ぶと、Output画像をCheckpoint別に移動します。対象は、Output内の相対パスに `YYYYMMDD` 形式の日付フォルダーがあり、その日付と画像の最終更新日がどちらも前日以前で、所属するCheckpointが一意に決まる画像です。たとえば `20261125/image_model_0001.jpg` は、11月26日以降に実行し、最終更新日も前日以前なら対象になります。
+- **Archiveを開く** からエクスプローラーで成果物を取り出せます。**Archiveを戻す** では、Archive化で移動した画像のうちArchiveに残っているものを元のOutputへ戻します。Checkpointを複数選択し、右クリックの **アーカイブ化**・**アーカイブ化解除** から対象を絞ることもできます。起動時の自動実行は既定でオフで、解除を実行するとオフになります。
 - Archiveを元に戻すための移動記録はポータブル版の `data/archive-history` に保存します。展開先を移す場合は、同じ `data` にある `settings.json` と合わせて引き継いでください。
 - Archive化や解除で空になった移動元フォルダーは自動で削除します。参照ルートと、他のファイルが残るフォルダーは保持します。
-- 評価の変更とCheckpoint廃棄を使うには、連携対応版のHandpickerSuiteを起動し、生成された評価JSONを指定します。Checkpointを目的の評価の見出しや一覧へドラッグするか、一覧の右クリックから評価を変更できます。折りたたんだ評価も見出しで受け付けます。廃棄は `delete` 評価を付けてから右クリックで実行します。対象の画像生成を停止してから実行すると、画像をArchiveへ退避し、Checkpoint本体をごみ箱へ送ります。
+- 評価の変更、評価の取り込み、Checkpoint廃棄を使う場合は、ComfyUI Managerで **Checkpoint Handpicker Suite**（`checkpoint-handpicker-suite`）の **0.3.4** を導入し、ComfyUIを再起動してください。Studioのプロジェクト設定で検出された評価JSONを選びます。Suite側で変更した評価をStudioに反映するには、メイン画面の **更新** を押します。 [Comfy RegistryのHandpickerSuite](https://registry.comfy.org/nodes/checkpoint-handpicker-suite)
+- Checkpointを目的の評価の見出しや一覧へドラッグするか、一覧の右クリックから評価を変更できます。折りたたんだ評価も見出しで受け付けます。廃棄は `delete` 評価を付けてから右クリックで実行します。対象の画像生成を停止してから実行すると、画像をArchiveへ退避し、Checkpoint本体をごみ箱へ送ります。
 - Suiteの連携対応版へ切り替える際は、旧版のSuiteと古い削除スクリプトを終了し、連携対応版が出力するスクリプトを使ってください。
 
 ## アプリの更新
@@ -63,4 +65,4 @@ Archive化と解除では、作成済みの画像キャッシュを移動先に�
 
 `artifacts/HandpickerStudio-<version>-win-x64.zip` が生成されます。ビルドは実行ごとの作業フォルダで行い、検証済みのZIPを成果物ディレクトリに配置します。
 
-更新試験と正式配布に使う署名付きのZIPは、[自動アップデート詳細設計](spec/HandpickerStudio_AutoUpdate.md#3-ビルドと署名鍵) の配布モードで生成します。
+正式配布では `Release` モードで署名付きZIP・`update-manifest.json`・`update-signatures.json` を生成し、同じGitHub Releaseに添付します。更新試験には `Test` モードを使います。 [自動アップデート詳細設計](https://github.com/ruminar/HandpickerStudio/blob/develop/spec/HandpickerStudio_AutoUpdate.md#3-ビルドと署名鍵)

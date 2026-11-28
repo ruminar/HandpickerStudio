@@ -52,7 +52,7 @@ internal static partial class ArchiveHistory
             {
                 string output = image.Root.OutputPath;
                 string resolvedOutput = CatalogService.ResolveExistingDirectory(output);
-                if (!resolvedOutput.Equals(catalog.OutputPath(output), StringComparison.OrdinalIgnoreCase))
+                if (!resolvedOutput.Equals(catalog.OutputFolders[output].Location, StringComparison.OrdinalIgnoreCase))
                     throw new IOException("走査後にOutputの参照先が変わりました。");
                 using var file = VerifiedFile.Open(image.FullPath, output, forMove: true);
                 var lastWrite = DateOnly.FromDateTime(DateTime.FromFileTime(file.Stamp.LastWrite));
@@ -84,7 +84,7 @@ internal static partial class ArchiveHistory
                 result.Report($"{image.FullPath}{Environment.NewLine}{error.Message}");
             }
         }
-        PruneEmptyDirectories(sources, catalog.OutputPaths.Values, result);
+        PruneEmptyDirectories(sources, catalog.OutputFolders.Values, result);
     }
 
     private static DateOnly? LastBucket(string relativePath)
@@ -166,7 +166,8 @@ internal static partial class ArchiveHistory
                 result.Report(error.Message);
             }
         }
-        PruneEmptyDirectories(sources, projects.SelectMany(item => item.Roots).Select(root => root.OutputPath), result);
+        if (sources.Count != 0)
+            PruneEmptyDirectories(sources, CatalogService.ReadOutputFolders(projects, CancellationToken.None).Values, result);
     }
 
     private static void RequireFileBelow(string path, string root)

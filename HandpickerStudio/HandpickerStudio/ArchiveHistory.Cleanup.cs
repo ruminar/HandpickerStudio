@@ -9,9 +9,10 @@ internal static partial class ArchiveHistory
 
     private sealed record CleanupSource(string Directory, string Root, string PhysicalRoot, string? CheckpointPath = null);
 
-    private static void PruneEmptyDirectories(HashSet<CleanupSource> sources, IEnumerable<string> outputRoots, Result result)
+    private static void PruneEmptyDirectories(HashSet<CleanupSource> sources, IEnumerable<OutputFolder> outputRoots, Result result)
     {
-        var protectedRoots = outputRoots.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var protectedRoots = outputRoots.SelectMany(root => new[] { root.Location, root.PhysicalPath })
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var source in sources)
         {
             string directory = source.Directory;
@@ -24,7 +25,8 @@ internal static partial class ArchiveHistory
                         break;
                     string expected = Path.Combine(source.PhysicalRoot, Path.GetRelativePath(source.Root, directory));
                     if (protectedRoots.Contains(directory) || protectedRoots.Contains(expected) ||
-                        !CatalogService.ResolveExistingDirectory(directory).Equals(expected, StringComparison.OrdinalIgnoreCase))
+                        !CatalogService.ResolveExistingDirectory(directory).Equals(expected, StringComparison.OrdinalIgnoreCase) ||
+                        protectedRoots.Contains(ArchiveDirectory.ResolvePhysicalPath(directory, CancellationToken.None)))
                         break;
 
                     string parent = Path.GetDirectoryName(directory)!;

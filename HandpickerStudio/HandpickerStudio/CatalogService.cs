@@ -34,10 +34,9 @@ internal sealed record ImageEntry(string FullPath, string RelativePath, string L
 
 internal sealed record Catalog(Checkpoint[] Checkpoints, CheckpointGroup[] Groups,
     ILookup<string, Checkpoint> Labels, HeldLabel[] ObservedHolds, string CollisionReport, string[] Warnings, bool IsComplete,
-    IReadOnlyDictionary<string, string> OutputPaths, string[] UnconfirmedOutputs)
-{
-    public string OutputPath(string path) => OutputPaths.GetValueOrDefault(path, path);
-}
+    IReadOnlyDictionary<string, OutputFolder> OutputFolders, string[] UnconfirmedOutputs);
+
+internal sealed record OutputFolder(string Location, string PhysicalPath, string HoldPath);
 
 internal sealed record ImageScan(ImageEntry[] Images, RootStatus[] Roots, string[] Warnings);
 
@@ -80,13 +79,12 @@ internal static partial class CatalogService
                 warnings.Add($"{project.Name}のCheckpoint一覧: {error}");
             }, token));
 
-        var outputPaths = projects.SelectMany(project => project.Roots).Select(root => root.OutputPath)
-            .Distinct(StringComparer.OrdinalIgnoreCase).ToDictionary(path => path, path => ResolveOutputPath(path, token), StringComparer.OrdinalIgnoreCase);
+        var outputFolders = ReadOutputFolders(projects, token);
         var unconfirmedOutputs = projects.Where(project => incomplete.Contains(project.Id)).SelectMany(project => project.Roots)
-            .Select(root => outputPaths[root.OutputPath]).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            .Select(root => outputFolders[root.OutputPath].PhysicalPath).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
         var labels = IndexLabels(checkpoints);
-        var (heldLabels, report) = FindLabelCollisions(labels, outputPaths, token);
+        var (heldLabels, report) = FindLabelCollisions(labels, outputFolders, token);
 
         var activeModels = checkpoints.Where(item => item.Project.Id == active.Id).ToArray();
         var duplicates = activeModels.GroupBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase)
@@ -100,11 +98,11 @@ internal static partial class CatalogService
         var groups = RatingGroups.Where(group => group.Rating != Rating.Unavailable || byRating.Contains(Rating.Unavailable))
             .Select(group => new CheckpointGroup(group.Label, byRating[group.Rating].ToArray(), group.Rating)).ToArray();
         return new(activeCheckpoints, groups, labels, heldLabels, report, warnings.Distinct().ToArray(), isComplete,
-            outputPaths, unconfirmedOutputs);
+            outputFolders, unconfirmedOutputs);
     }
 
     private static (HeldLabel[] Holds, string Report) FindLabelCollisions(ILookup<string, Checkpoint> labels,
-        IReadOnlyDictionary<string, string> outputPaths, CancellationToken token)
+        IReadOnlyDictionary<string, OutputFolder> outputFolders, CancellationToken token)
     {
         List<HeldLabel> holds = [];
         List<string> reports = [];
@@ -119,7 +117,7 @@ internal static partial class CatalogService
                 for (int second = first + 1; second < candidates.Length; second++)
                 {
                     var right = candidates[second];
-                    var shared = SharedOutputs(left.Project, right.Project, outputPaths).ToArray();
+                    var shared = SharedOutputs(left.Project, right.Project, outputFolders).ToArray();
                     if (shared.Length == 0 && left.Project.Id != right.Project.Id)
                         continue;
                     conflicting.Add(left);
@@ -140,27 +138,43 @@ internal static partial class CatalogService
         return (holds.DistinctBy(HoldKey).ToArray(), string.Join(Environment.NewLine + Environment.NewLine, reports));
     }
 
-    private static IEnumerable<string> SharedOutputs(Project left, Project right, IReadOnlyDictionary<string, string> outputPaths)
+    private static IEnumerable<string> SharedOutputs(Project left, Project right, IReadOnlyDictionary<string, OutputFolder> outputFolders)
     {
         foreach (var first in left.Roots)
         {
-            string firstPath = outputPaths[first.OutputPath];
+            var firstFolder = outputFolders[first.OutputPath];
             foreach (var second in right.Roots)
             {
-                string secondPath = outputPaths[second.OutputPath];
-                if (WorkspacePaths.Within(firstPath, secondPath))
-                    yield return firstPath;
-                else if (WorkspacePaths.Within(secondPath, firstPath))
-                    yield return secondPath;
+                var secondFolder = outputFolders[second.OutputPath];
+                if (WorkspacePaths.Within(firstFolder.PhysicalPath, secondFolder.PhysicalPath))
+                    yield return firstFolder.HoldPath;
+                else if (WorkspacePaths.Within(secondFolder.PhysicalPath, firstFolder.PhysicalPath))
+                    yield return secondFolder.HoldPath;
             }
         }
     }
 
-    private static string ResolveOutputPath(string path, CancellationToken token)
+    internal static Dictionary<string, OutputFolder> ReadOutputFolders(Project[] projects, CancellationToken token) =>
+        projects.SelectMany(project => project.Roots).Select(root => root.OutputPath).Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(path => path, path => ResolveOutputFolder(path, token), StringComparer.OrdinalIgnoreCase);
+
+    private static OutputFolder ResolveOutputFolder(string path, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        try { return ResolveExistingDirectory(path); }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { return path; }
+        string location = path;
+        try
+        {
+            location = ResolveExistingDirectory(path);
+            var (physicalPath, localSharePath) = ArchiveDirectory.ResolvePhysicalLocation(path, token);
+            string holdPath = localSharePath ?? (physicalPath.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase)
+                ? @"\\" + physicalPath[8..]
+                : location);
+            return new(location, physicalPath, holdPath);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return new(location, location, location);
+        }
     }
 
     internal static string ResolveExistingDirectory(string path)
@@ -258,6 +272,9 @@ internal static partial class CatalogService
         List<RootStatus> roots = [];
         var referenceRoots = ReferenceRootCheck.Inspect(active, token);
         var warnings = referenceRoots.Conflicts.Select(conflict => conflict.Message).ToList();
+        var holdPaths = holds.Select(hold => hold.OutputPath).Distinct(StringComparer.OrdinalIgnoreCase).ToDictionary(path => path,
+            path => (catalog.OutputFolders.GetValueOrDefault(path) ?? ResolveOutputFolder(path, token)).PhysicalPath,
+            StringComparer.OrdinalIgnoreCase);
         foreach (ImageRoot root in active.Roots)
         {
             token.ThrowIfCancellationRequested();
@@ -286,8 +303,8 @@ internal static partial class CatalogService
                 continue;
             }
 
-            string outputPath = catalog.OutputPath(root.OutputPath);
-            var held = holds.Where(item => WorkspacePaths.Overlap(catalog.OutputPath(item.OutputPath), outputPath))
+            string outputPath = catalog.OutputFolders[root.OutputPath].PhysicalPath;
+            var held = holds.Where(item => WorkspacePaths.Overlap(holdPaths[item.OutputPath], outputPath))
                 .ToLookup(item => item.Label, StringComparer.OrdinalIgnoreCase);
             var unconfirmed = catalog.UnconfirmedOutputs.Where(path => WorkspacePaths.Overlap(path, outputPath)).ToArray();
             foreach (string path in EnumerateFiles(root.OutputPath, error => warnings.Add($"{root.Name}のOutput: {error}"), token))
@@ -299,9 +316,9 @@ internal static partial class CatalogService
                 string physicalPath = Path.Combine(outputPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
                 var labels = MatchingLabels(relativePath, catalog.Labels, held);
                 var matches = labels.SelectMany(label => catalog.Labels[label]).Distinct().Where(checkpoint => checkpoint.Project.Roots
-                    .Any(source => WorkspacePaths.Within(physicalPath, catalog.OutputPath(source.OutputPath)))).ToArray();
+                    .Any(source => WorkspacePaths.Within(physicalPath, catalog.OutputFolders[source.OutputPath].PhysicalPath))).ToArray();
                 var imageHolds = labels.SelectMany(label => held[label])
-                    .Where(item => WorkspacePaths.Within(physicalPath, catalog.OutputPath(item.OutputPath))).ToArray();
+                    .Where(item => WorkspacePaths.Within(physicalPath, holdPaths[item.OutputPath])).ToArray();
                 bool isHeld = imageHolds.Length != 0;
                 bool isComplete = !unconfirmed.Any(folder => WorkspacePaths.Within(physicalPath, folder));
                 bool hasUniqueOwner = !isHeld && isComplete && matches.Length == 1;

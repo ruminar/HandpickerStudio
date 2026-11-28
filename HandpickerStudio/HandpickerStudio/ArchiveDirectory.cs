@@ -38,13 +38,18 @@ internal static class ArchiveDirectory
     internal static string ResolvePhysicalPath(string path, CancellationToken token, bool allowMissing = false)
     {
         if (allowMissing)
-            return ResolvePath(path, token, ResolvePhysicalDirectory);
+            return ResolvePath(path, token, directory => ResolvePhysicalDirectory(directory).PhysicalPath);
 
+        return ResolvePhysicalLocation(path, token).PhysicalPath;
+    }
+
+    internal static (string PhysicalPath, string? LocalSharePath) ResolvePhysicalLocation(string path, CancellationToken token)
+    {
         token.ThrowIfCancellationRequested();
         if (!File.GetAttributes(path).HasFlag(FileAttributes.Directory))
             throw new IOException($"フォルダーではありません。{path}");
 
-        return Path.TrimEndingDirectorySeparator(ResolvePhysicalDirectory(path));
+        return ResolvePhysicalDirectory(path);
     }
 
     internal static bool MayRequireCopy(string source, string destination)
@@ -94,14 +99,14 @@ internal static class ArchiveDirectory
 
     private static string ResolveStoragePath(string path) => ResolveExistingPath(path, identifyVolume: true);
 
-    private static string ResolvePhysicalDirectory(string path)
+    private static (string PhysicalPath, string? LocalSharePath) ResolvePhysicalDirectory(string path)
     {
-        string resolved = ResolveStoragePath(path);
+        string resolved = Path.TrimEndingDirectorySeparator(ResolveStoragePath(path));
         if (LocalSmbShare.GetLocalPath(resolved) is not { } local)
-            return resolved;
+            return (resolved, null);
 
-        try { return ResolveStoragePath(local); }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return resolved; }
+        try { return (Path.TrimEndingDirectorySeparator(ResolveStoragePath(local)), local); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return (resolved, null); }
     }
 
     private static string ResolveExistingPath(string path, bool identifyVolume)
