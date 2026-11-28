@@ -8,6 +8,9 @@ Windows 11 x64 と **.NET 10 Windows Desktop Runtime（x64）** が必要です�
 
 [GitHub Releases](https://github.com/ruminar/HandpickerStudio/releases) から `HandpickerStudio-<version>-win-x64.zip` を取得してください。配布物はFramework-dependentのポータブルZIPです。.NETランタイムは同梱されません。書き込み可能なフォルダにZIPを展開し、`HandpickerStudio.exe` を起動してください。アプリ本体は標準ユーザー権限で利用できます。
 
+<img width="1207" height="887" alt="image" src="https://github.com/user-attachments/assets/c8669421-c99f-45c5-9ef6-b212adc893b4" />
+
+
 ## 画像を閲覧する
 
 1. **登録**からプロジェクト名とComfyUIフォルダーを指定します。ポータブル版の `ComfyUI_windows_portable` と、その中の `ComfyUI` 本体のどちらも選べます。標準フォルダーと `extra_model_paths.yaml` のCheckpoint参照先を確認し、検出したHandpickerSuiteの評価JSONと連携情報を表示します。手動で登録する場合は、**手動設定・キャッシュ保存先** を開きます。
